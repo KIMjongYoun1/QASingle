@@ -67,11 +67,34 @@ erDiagram
         timestamp created_at
     }
 
-    projects ||--o{ qa_snapshots       : "1:1 (upsert)"
-    projects ||--o{ deploy_histories   : "1:N"
-    projects ||--o{ test_flows         : "1:N"
-    projects ||--o{ test_runs          : "1:N"
-    test_runs ||--o{ run_comments      : "1:N (append-only)"
+    notification_configs {
+        int id PK
+        int project_id FK
+        varchar name
+        varchar type
+        varchar webhook_url
+        boolean enabled
+        json events
+        timestamp created_at
+    }
+
+    case_histories {
+        int id PK
+        int project_id FK
+        varchar case_id
+        varchar action
+        json before
+        json after
+        timestamp changed_at
+    }
+
+    projects ||--o{ qa_snapshots         : "1:1 (upsert)"
+    projects ||--o{ deploy_histories     : "1:N"
+    projects ||--o{ test_flows           : "1:N"
+    projects ||--o{ test_runs            : "1:N"
+    projects ||--o{ notification_configs : "1:N"
+    projects ||--o{ case_histories       : "1:N (auto)"
+    test_runs ||--o{ run_comments        : "1:N (append-only)"
 ```
 
 ## 비고
@@ -82,4 +105,6 @@ erDiagram
 | projects → deploy_histories | qa_snapshots.dep 저장 시 정규화 동기화 (version+environment 기준 upsert) |
 | projects → test_flows | 사용자 정의 순서형 케이스 묶음 |
 | projects → test_runs | 자동 실행 1회 = 1행. case_results / flow_results / mgr_snapshot 불변 |
+| projects → notification_configs | Discord / Slack 웹훅 설정. 여러 개 등록 가능 |
+| projects → case_histories | 케이스 관리 저장 시 스냅샷 diff로 자동 생성. 수정·삭제 없음 |
 | test_runs → run_comments | 추가 전용 댓글. 수정·삭제 엔드포인트 없음 |

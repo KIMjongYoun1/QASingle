@@ -94,6 +94,7 @@ export interface QAData {
 export interface Project {
   id: number;
   name: string;
+  created_at?: string;
 }
 
 export interface FlowStep {

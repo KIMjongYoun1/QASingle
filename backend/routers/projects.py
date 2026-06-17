@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
 from database import get_db
 import models
 
@@ -15,6 +16,7 @@ class ProjectCreate(BaseModel):
 class ProjectOut(BaseModel):
     id: int
     name: str
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

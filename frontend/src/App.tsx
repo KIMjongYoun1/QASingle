@@ -7,6 +7,9 @@ import CaseManagerPage from './pages/CaseManagerPage';
 import ReportPage from './pages/ReportPage';
 import AutoRunPage from './pages/AutoRunPage';
 import HistoryPage from './pages/HistoryPage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import CaseHistoryPage from './pages/CaseHistoryPage';
+import DashboardPage from './pages/DashboardPage';
 import ExcelImportModal from './components/ExcelImportModal';
 import AnalysisModal from './components/AnalysisModal';
 import { useQAStore } from './store/useQAStore';
@@ -17,6 +20,7 @@ function App() {
   const [tab, setTab] = useState<TabKey>('mgr');
   const [showExcel, setShowExcel] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(true);
   const [projects, setProjects] = useState<Project[]>([]);
   const [focusCase, setFocusCase] = useState<{ tree: 'tst' | 'dep'; id: string; nonce: number } | null>(null);
   const projectId = useQAStore((s) => s.projectId);
@@ -38,18 +42,21 @@ function App() {
     <div className="flex h-screen bg-background">
       <Sidebar
         tab={tab}
-        onTabChange={setTab}
+        onTabChange={(t) => { setShowDashboard(false); setTab(t); }}
         projectId={projectId}
-        onProjectChange={setProjectId}
+        onProjectChange={(id) => { setShowDashboard(false); setProjectId(id); }}
         onOpenExcelImport={() => setShowExcel(true)}
         onOpenAnalysis={() => setShowAnalysis(true)}
-        onSelectCase={(treeTab, id) => { setTab(treeTab); setFocusCase({ tree: treeTab, id, nonce: Date.now() }); }}
+        onSelectCase={(treeTab, id) => { setShowDashboard(false); setTab(treeTab); setFocusCase({ tree: treeTab, id, nonce: Date.now() }); }}
+        onOpenDashboard={() => setShowDashboard(true)}
         data={data}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <Header projectName={projectName} />
+        <Header projectName={showDashboard ? '전체 대시보드' : projectName} />
         <div className="min-h-0 flex-1">
-          {!projectId ? (
+          {showDashboard ? (
+            <DashboardPage onSelectProject={(id) => { setProjectId(id); setShowDashboard(false); setTab('history'); }} />
+          ) : !projectId ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               프로젝트를 선택하거나 새로 생성해주세요
             </div>
@@ -58,6 +65,8 @@ function App() {
               {tab === 'mgr' && <CaseManagerPage />}
               {tab === 'auto' && <AutoRunPage onGoHistory={() => setTab('history')} />}
               {tab === 'history' && <HistoryPage />}
+              {tab === 'analytics' && <AnalyticsPage />}
+              {tab === 'case-history' && <CaseHistoryPage />}
               {tab === 'tst' && (
                 <ReportPage
                   mode="tst"

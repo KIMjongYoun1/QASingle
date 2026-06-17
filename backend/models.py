@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -16,6 +16,8 @@ class Project(Base):
     deploy_histories = relationship("DeployHistory", back_populates="project", cascade="all, delete-orphan")
     test_runs = relationship("TestRun", back_populates="project", cascade="all, delete-orphan")
     test_flows = relationship("TestFlow", back_populates="project", cascade="all, delete-orphan")
+    notification_configs = relationship("NotificationConfig", back_populates="project", cascade="all, delete-orphan")
+    case_histories = relationship("CaseHistory", back_populates="project", cascade="all, delete-orphan")
 
 
 class QASnapshot(Base):
@@ -101,3 +103,34 @@ class TestFlow(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     project = relationship("Project", back_populates="test_flows")
+
+
+class NotificationConfig(Base):
+    """프로젝트별 알림 설정 (Discord / Slack 웹훅)"""
+    __tablename__ = "notification_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    name = Column(String(100), nullable=False)           # 식별용 이름
+    type = Column(String(20), nullable=False)            # "discord" | "slack"
+    webhook_url = Column(String(500), nullable=False)
+    enabled = Column(Boolean, default=True)
+    events = Column(JSON, default=list)                  # ["run_completed", "run_failed"]
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("Project", back_populates="notification_configs")
+
+
+class CaseHistory(Base):
+    """케이스 변경 이력 — qa_snapshot 저장 시 mgr.cases diff 자동 기록"""
+    __tablename__ = "case_histories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    case_id = Column(String(100), nullable=False, index=True)
+    action = Column(String(20), nullable=False)          # "created" | "updated" | "deleted"
+    before = Column(JSON, nullable=True)                 # 변경 전 케이스 전체
+    after = Column(JSON, nullable=True)                  # 변경 후 케이스 전체
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("Project", back_populates="case_histories")

@@ -13,6 +13,10 @@ from urllib.parse import urlencode
 import httpx
 from database import get_db, SessionLocal
 import models
+from services.notification import notification_service
+import logging
+
+logger = logging.getLogger("qa.runs")
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -240,8 +244,7 @@ def _execute_run(run_id: int, project_id: int, base_url: str, auth_header: Optio
                     try:
                         future.result()
                     except Exception as e:
-                        # 개별 케이스 실패는 로그만 남기고 계속 진행
-                        print(f"[run {run_id}] case error: {e}")
+                        logger.error("[run %d] 케이스 실행 오류: %s", run_id, e)
 
         # 플로우: 순차 실행 (fail 시 해당 플로우 즉시 중단)
         flow_results = []
@@ -324,6 +327,9 @@ def _execute_run(run_id: int, project_id: int, base_url: str, auth_header: Optio
                     for c in mgr_cases if c.get("id") in all_executed_ids
                 ]
             db3.commit()
+
+            # 알림 전송
+            _dispatch_notification(project_id, run3, "run_completed", db3)
         finally:
             db3.close()
 
@@ -335,8 +341,34 @@ def _execute_run(run_id: int, project_id: int, base_url: str, auth_header: Optio
                 run4.status = "failed"
                 run4.error = str(e)
                 db4.commit()
+                _dispatch_notification(project_id, run4, "run_failed", db4, error=str(e))
         finally:
             db4.close()
+
+
+def _dispatch_notification(project_id: int, run, event: str, db: Session, error: str = ""):
+    logger.info("[notification] project=%d run=%d event=%s", project_id, run.id, event)
+    try:
+        configs = (
+            db.query(models.NotificationConfig)
+            .filter(models.NotificationConfig.project_id == project_id,
+                    models.NotificationConfig.enabled == True)
+            .all()
+        )
+        if not configs:
+            return
+        payload = {
+            "run_id": run.id, "label": run.label,
+            "total": run.total, "fail": run.fail, "error": error,
+        }
+        notification_service.dispatch(
+            [{"id": c.id, "type": c.type, "webhook_url": c.webhook_url,
+              "enabled": c.enabled, "events": c.events or []} for c in configs],
+            event,
+            payload,
+        )
+    except Exception as e:
+        logger.error("[notification] 전송 실패: %s", e, exc_info=True)
 
 
 def _update_case_result(db: Session, project_id: int, case_id: str, actual_text: str,

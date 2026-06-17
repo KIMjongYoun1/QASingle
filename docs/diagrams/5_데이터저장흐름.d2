@@ -1,16 +1,20 @@
 direction: right
 
-MGR: qa_snapshots\n.mgr {shape: cylinder}
-RUN: test_runs\n(mgr_snapshot) {shape: cylinder}
-CR: case_results\nflow_results {shape: cylinder}
+MGR: "qa_snapshots.mgr\n케이스 관리" {shape: cylinder}
+RUN: "test_runs\n(mgr_snapshot)" {shape: cylinder}
+CR: "case_results\nflow_results" {shape: cylinder}
 CMT: run_comments {shape: cylinder}
-DEP: qa_snapshots\n.dep {shape: cylinder}
+HIST: case_histories {shape: cylinder}
+DEP: "qa_snapshots.dep\n배포결과서" {shape: cylinder}
 DH: deploy_histories {shape: cylinder}
 AI: Claude API {shape: hexagon}
+NOTIF: "Discord / Slack" {shape: hexagon}
 
-MGR -> RUN: 실행 시 스냅샷 저장
-RUN -> CR: 결과 기록 (불변)
+MGR -> RUN: "실행 시 스냅샷 (불변)"
+MGR -> HIST: "저장 시 diff 자동 기록"
+RUN -> CR: "결과 기록 (불변)"
 RUN -> CMT: 댓글 연결
+RUN -> NOTIF: "완료·실패 이벤트"
 
-DEP -> DH: 정규화 동기화\n(version+env 기준 upsert)
+DEP -> DH: "정규화 동기화\n(version+env upsert)"
 DH -> AI: LLM 분석 요청

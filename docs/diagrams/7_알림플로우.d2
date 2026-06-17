@@ -1,0 +1,16 @@
+direction: right
+
+실행완료: "실행 완료 / 실패\n_execute_run"
+
+조회: "notification_configs 조회\nenabled=true\n+ event 구독"
+
+실행완료 -> 조회
+
+DISCORD: "Discord Webhook\nEmbed 카드\n색상: 초록·주황·빨강" {shape: hexagon}
+SLACK: "Slack Webhook\ntext 메시지" {shape: hexagon}
+LOG: runs.log {shape: cylinder}
+
+조회 -> DISCORD: type=discord
+조회 -> SLACK: type=slack
+DISCORD -> LOG
+SLACK -> LOG

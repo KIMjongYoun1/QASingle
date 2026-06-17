@@ -1,0 +1,25 @@
+direction: right
+
+저장: "케이스 관리 저장\nPOST /api/qa/data"
+
+READ: "old_cases 추출\n(덮어쓰기 전)"
+WRITE: "qa_snapshots 업데이트"
+DIFF: "new_cases diff 비교"
+
+저장 -> READ
+저장 -> WRITE
+READ -> DIFF
+
+CREATED: "case_histories\naction=created\nafter=케이스 전체" {style.fill: "#dcfce7"}
+UPDATED: "case_histories\naction=updated\nbefore+after 전체" {style.fill: "#dbeafe"}
+DELETED: "case_histories\naction=deleted\nbefore=케이스 전체" {style.fill: "#fee2e2"}
+
+DIFF -> CREATED: 새 ID 추가
+DIFF -> UPDATED: 추적 필드 변경
+DIFF -> DELETED: 기존 ID 삭제
+
+LOG: case_history.log
+
+CREATED -> LOG
+UPDATED -> LOG
+DELETED -> LOG

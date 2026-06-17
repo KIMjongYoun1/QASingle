@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket } from 'lucide-react';
+import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket, BarChart2, GitCommitHorizontal, LayoutDashboard } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Project, QAData, PF, DepPF } from '../types/qa';
 import { listProjects, createProject } from '../api/projects';
@@ -8,7 +8,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { cn } from '../lib/utils';
 
-export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history';
+export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history' | 'analytics' | 'case-history';
 
 interface Props {
   tab: TabKey;
@@ -18,6 +18,7 @@ interface Props {
   onOpenExcelImport: () => void;
   onOpenAnalysis: () => void;
   onSelectCase: (tree: 'tst' | 'dep', caseId: string) => void;
+  onOpenDashboard: () => void;
   data: QAData;
 }
 
@@ -35,6 +36,8 @@ const GROUPS: { key: string; label: string; tabs: { key: TabKey; label: string; 
     label: 'Result / Logs',
     tabs: [
       { key: 'history', label: '실행 히스토리', icon: <History className="size-3.5" /> },
+      { key: 'analytics', label: '실행 분석', icon: <BarChart2 className="size-3.5" /> },
+      { key: 'case-history', label: '변경 이력', icon: <GitCommitHorizontal className="size-3.5" /> },
       { key: 'tst', label: '테스트결과서', icon: <FileText className="size-3.5" />, tree: 'tst' },
       { key: 'dep', label: '배포결과서', icon: <FileText className="size-3.5" />, tree: 'dep' },
     ],
@@ -48,7 +51,7 @@ function statusDot(pf?: PF | DepPF) {
   return 'bg-muted-foreground/40';
 }
 
-export default function Sidebar({ tab, onTabChange, projectId, onProjectChange, onOpenExcelImport, onOpenAnalysis, onSelectCase, data }: Props) {
+export default function Sidebar({ tab, onTabChange, projectId, onProjectChange, onOpenExcelImport, onOpenAnalysis, onSelectCase, onOpenDashboard, data }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -123,9 +126,18 @@ export default function Sidebar({ tab, onTabChange, projectId, onProjectChange, 
 
   return (
     <aside className="flex h-screen w-64 min-w-64 flex-col gap-3 border-r border-border bg-card p-3">
-      <div className="px-1">
-        <h1 className="text-base font-bold text-foreground">Single_QA_Tools</h1>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">⌘K 로 빠른 검색</p>
+      <div className="flex items-start justify-between px-1">
+        <div>
+          <h1 className="text-base font-bold text-foreground">Single_QA_Tools</h1>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">⌘K 로 빠른 검색</p>
+        </div>
+        <button
+          onClick={onOpenDashboard}
+          title="전체 프로젝트 대시보드"
+          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+        >
+          <LayoutDashboard className="size-4" />
+        </button>
       </div>
 
       {creating ? (
