@@ -103,7 +103,7 @@ PostgreSQL
 ### 1. 저장소 클론
 
 ```bash
-git clone https://github.com/your-username/QA-Server.git
+git clone https://github.com/your-username/QASingle.git
 cd QA-Server
 ```
 
