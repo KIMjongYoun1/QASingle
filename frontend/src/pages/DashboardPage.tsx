@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, RadarChart, Radar, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis, Legend,
 } from 'recharts';
-import { ChevronDown, ArrowRight, Calendar } from 'lucide-react';
+import { ChevronUp, ChevronDown, ArrowRight, Calendar, Search, X } from 'lucide-react';
 import { listProjects } from '../api/projects';
 import { getAnalytics, type ProjectAnalytics, type DateRange } from '../api/analytics';
 import { getCaseHistory } from '../api/analytics';
@@ -113,7 +113,8 @@ function ProjectCard({ row, color, onClick }: { row: ProjectData; color: string;
 export default function DashboardPage({ onSelectProject }: Props) {
   const [rows, setRows] = useState<ProjectData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [showAll, setShowAll] = useState(false);
+  const [search, setSearch] = useState('');
   const [preset, setPreset] = useState<number | null>(null);        // null = 전체
   const [customRange, setCustomRange] = useState<DateRange>({});
   const [showCustom, setShowCustom] = useState(false);
@@ -150,20 +151,28 @@ export default function DashboardPage({ onSelectProject }: Props) {
           };
         })
       );
-      // 최근 실행순 정렬 → 실행 없으면 프로젝트 생성일 순
+      // 정렬: ① 최근 실행일 내림차순 → ② 실행 없는 것 뒤로 → ③ 가나다순
       all.sort((a, b) => {
-        if (a.lastRunAt && b.lastRunAt) return b.lastRunAt.localeCompare(a.lastRunAt);
-        if (a.lastRunAt) return -1;
-        if (b.lastRunAt) return 1;
-        return (b.project.created_at ?? '').localeCompare(a.project.created_at ?? '');
+        if (a.lastRunAt && b.lastRunAt) {
+          const diff = b.lastRunAt.localeCompare(a.lastRunAt);
+          if (diff !== 0) return diff;
+        }
+        if (a.lastRunAt && !b.lastRunAt) return -1;
+        if (!a.lastRunAt && b.lastRunAt) return 1;
+        return a.project.name.localeCompare(b.project.name, 'ko');
       });
       setRows(all);
       setLoading(false);
     })();
   }, [range]);
 
-  const visible = rows.slice(0, visibleCount);
-  const hasMore = visibleCount < rows.length;
+  const filtered = useMemo(() => {
+    if (!search.trim()) return rows;
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => r.project.name.toLowerCase().includes(q));
+  }, [rows, search]);
+
+  const visible = showAll ? filtered : filtered.slice(0, PAGE_SIZE);
   const hasRuns = rows.some((r) => r.analytics && r.analytics.total_runs > 0);
 
   // 비교 차트 데이터
@@ -202,33 +211,53 @@ export default function DashboardPage({ onSelectProject }: Props) {
           <div>
             <h2 className="text-xl font-bold text-foreground">프로젝트 대시보드</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {rows.length}개 프로젝트 · {rangeLabel}
+              {search ? `${filtered.length} / ${rows.length}개 프로젝트` : `${rows.length}개 프로젝트`}
+              {' · '}{rangeLabel}
             </p>
           </div>
 
-          {/* 기간 필터 */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {PRESETS.map((p) => (
-              <Button
-                key={String(p.days)}
-                size="sm"
-                variant={preset === p.days && !showCustom ? 'default' : 'outline'}
-                className="h-7 px-3 text-xs"
-                onClick={() => applyPreset(p.days)}
-              >
-                {p.label}
-              </Button>
-            ))}
-            <Button
-              size="sm"
-              variant={showCustom || preset === -1 ? 'default' : 'outline'}
-              className="h-7 gap-1 px-3 text-xs"
-              onClick={() => setShowCustom((v) => !v)}
-            >
-              <Calendar className="size-3" />
-              직접 설정
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 검색창 */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setShowAll(false); }}
+                placeholder="프로젝트 검색..."
+                className="h-8 w-48 pl-8 pr-7 text-xs"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+
           </div>
+        </div>
+
+        {/* 기간 필터 버튼 */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {PRESETS.map((p) => (
+            <Button
+              key={String(p.days)}
+              size="sm"
+              variant={preset === p.days && !showCustom ? 'default' : 'outline'}
+              className="h-7 px-3 text-xs"
+              onClick={() => applyPreset(p.days)}
+            >
+              {p.label}
+            </Button>
+          ))}
+          <Button
+            size="sm"
+            variant={showCustom || preset === -1 ? 'default' : 'outline'}
+            className="h-7 gap-1 px-3 text-xs"
+            onClick={() => setShowCustom((v) => !v)}
+          >
+            <Calendar className="size-3" />
+            직접 설정
+          </Button>
         </div>
 
         {/* 직접 기간 설정 */}
@@ -262,14 +291,17 @@ export default function DashboardPage({ onSelectProject }: Props) {
               ))}
             </div>
 
-            {/* 더보기 */}
-            {hasMore && (
+            {/* 전체 펼치기 / 접기 */}
+            {filtered.length > PAGE_SIZE && (
               <button
-                onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
+                onClick={() => setShowAll((v) => !v)}
                 className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-border py-3 text-xs text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
               >
-                <ChevronDown className="size-3.5" />
-                더보기 ({rows.length - visibleCount}개 남음)
+                {showAll ? (
+                  <><ChevronUp className="size-3.5" />접기</>
+                ) : (
+                  <><ChevronDown className="size-3.5" />전체 펼치기 ({filtered.length - PAGE_SIZE}개 더보기)</>
+                )}
               </button>
             )}
 

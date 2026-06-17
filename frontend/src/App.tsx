@@ -10,6 +10,7 @@ import HistoryPage from './pages/HistoryPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import CaseHistoryPage from './pages/CaseHistoryPage';
 import DashboardPage from './pages/DashboardPage';
+import SuitePage from './pages/SuitePage';
 import ExcelImportModal from './components/ExcelImportModal';
 import AnalysisModal from './components/AnalysisModal';
 import { useQAStore } from './store/useQAStore';
@@ -62,6 +63,7 @@ function App() {
             </div>
           ) : (
             <>
+              {tab === 'suites' && <SuitePage />}
               {tab === 'mgr' && <CaseManagerPage />}
               {tab === 'auto' && <AutoRunPage onGoHistory={() => setTab('history')} />}
               {tab === 'history' && <HistoryPage />}

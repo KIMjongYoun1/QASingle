@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket, BarChart2, GitCommitHorizontal, LayoutDashboard } from 'lucide-react';
+import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket, BarChart2, GitCommitHorizontal, LayoutDashboard, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Project, QAData, PF, DepPF } from '../types/qa';
 import { listProjects, createProject } from '../api/projects';
@@ -8,7 +8,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { cn } from '../lib/utils';
 
-export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history' | 'analytics' | 'case-history';
+export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history' | 'analytics' | 'case-history' | 'suites';
 
 interface Props {
   tab: TabKey;
@@ -27,6 +27,7 @@ const GROUPS: { key: string; label: string; tabs: { key: TabKey; label: string; 
     key: 'suite',
     label: 'Test Suite',
     tabs: [
+      { key: 'suites', label: 'Test Suite', icon: <Layers className="size-3.5" /> },
       { key: 'mgr', label: '케이스 관리', icon: <ClipboardList className="size-3.5" /> },
       { key: 'auto', label: '자동 실행', icon: <Rocket className="size-3.5" /> },
     ],

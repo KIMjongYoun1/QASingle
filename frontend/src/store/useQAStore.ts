@@ -20,7 +20,9 @@ interface QAState {
   data: QAData;
   loading: boolean;
   pendingRunRestore: PendingRunRestore | null;
+  activeSuiteId: number | null;
   setPendingRunRestore: (r: PendingRunRestore | null) => void;
+  setActiveSuiteId: (id: number | null) => void;
   setProjectId: (id: number | null) => void;
   loadProject: (id: number) => Promise<void>;
   scheduleSave: () => void;
@@ -47,10 +49,12 @@ export const useQAStore = create<QAState>((set, get) => ({
   data: emptyQAData(),
   loading: false,
   pendingRunRestore: null,
+  activeSuiteId: null,
 
   setPendingRunRestore: (r) => set({ pendingRunRestore: r }),
+  setActiveSuiteId: (id) => set({ activeSuiteId: id }),
 
-  setProjectId: (id) => set({ projectId: id }),
+  setProjectId: (id) => set({ projectId: id, activeSuiteId: null }),
 
   loadProject: async (id) => {
     set({ loading: true, projectId: id });

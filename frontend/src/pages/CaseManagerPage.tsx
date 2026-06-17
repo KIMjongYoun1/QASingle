@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useQAStore } from '../store/useQAStore';
 import { listRuns, getRun, type RunSummary } from '../api/runs';
+import { listSuites, type TestSuite } from '../api/suites';
 import type { CaseType, KV, PF, TestCase } from '../types/qa';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -62,6 +63,8 @@ export default function CaseManagerPage() {
   const data = useQAStore((s) => s.data);
   const projectId = useQAStore((s) => s.projectId);
   const setPendingRunRestore = useQAStore((s) => s.setPendingRunRestore);
+  const activeSuiteId = useQAStore((s) => s.activeSuiteId);
+  const setActiveSuiteId = useQAStore((s) => s.setActiveSuiteId);
   const addCase = useQAStore((s) => s.addCase);
   const updateCase = useQAStore((s) => s.updateCase);
   const deleteCase = useQAStore((s) => s.deleteCase);
@@ -79,6 +82,30 @@ export default function CaseManagerPage() {
   const [historyFilter, setHistoryFilter] = useState<{ runId: number; label: string; caseIds: Set<string> } | null>(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyRuns, setHistoryRuns] = useState<RunSummary[]>([]);
+  const [activeSuite, setActiveSuite] = useState<TestSuite | null>(null);
+  const [suiteModalOpen, setSuiteModalOpen] = useState(false);
+  const [suiteList, setSuiteList] = useState<TestSuite[]>([]);
+
+  useEffect(() => {
+    if (!projectId || !activeSuiteId) { setActiveSuite(null); return; }
+    listSuites(projectId).then((list) => {
+      setActiveSuite(list.find((s) => s.id === activeSuiteId) ?? null);
+    }).catch(() => {});
+  }, [projectId, activeSuiteId]);
+
+  const openSuiteModal = async () => {
+    if (!projectId) return;
+    const list = await listSuites(projectId).catch(() => []);
+    setSuiteList(list);
+    setSuiteModalOpen(true);
+  };
+
+  const applySuite = (suite: TestSuite) => {
+    setActiveSuiteId(suite.id);
+    setActiveSuite(suite);
+    setSuiteModalOpen(false);
+    toast.success(`Suite "${suite.name}" 적용됨 — 케이스 ${suite.case_ids.length}건 필터`);
+  };
 
   const openHistoryModal = async () => {
     if (!projectId) return;
@@ -158,7 +185,10 @@ export default function CaseManagerPage() {
   };
   const cancelEdit = () => { setEditId(null); setForm(emptyForm); setShowAdvanced(false); };
 
+  const suiteIds = activeSuite ? new Set(activeSuite.case_ids) : null;
+
   const filtered = cases.filter((c) => {
+    if (suiteIds && !suiteIds.has(c.id)) return false;
     if (historyFilter && !historyFilter.caseIds.has(c.id)) return false;
     if (search && !c.id.toLowerCase().includes(search.toLowerCase()) && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (filterType && c.type !== filterType) return false;
@@ -379,8 +409,20 @@ export default function CaseManagerPage() {
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" onClick={() => { setSearch(''); setFilterType(''); setFilterPF(''); }}>✕ 초기화</Button>
-          <Button variant="outline" size="sm" className="ml-auto" onClick={openHistoryModal}>히스토리에서 불러오기</Button>
+          <div className="ml-auto flex gap-1.5">
+            <Button variant="outline" size="sm" onClick={openSuiteModal}>Suite 불러오기</Button>
+            <Button variant="outline" size="sm" onClick={openHistoryModal}>히스토리에서 불러오기</Button>
+          </div>
         </div>
+
+        {activeSuite && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/8 px-3 py-2 text-xs">
+            <span className="font-medium text-blue-600 dark:text-blue-400">스위트 필터:</span>
+            <span className="text-foreground">{activeSuite.name}</span>
+            <span className="text-muted-foreground">({activeSuite.case_ids.length}건 / {filtered.length}건 표시)</span>
+            <button onClick={() => setActiveSuiteId(null)} className="ml-auto text-muted-foreground hover:text-foreground">✕ 해제</button>
+          </div>
+        )}
 
         {historyFilter && (
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
@@ -426,6 +468,43 @@ export default function CaseManagerPage() {
                         </li>
                       );
                     })}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {suiteModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="flex w-[440px] max-h-[60vh] flex-col rounded-xl border border-border bg-card shadow-xl">
+              <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+                <h3 className="text-sm font-semibold">Suite 불러오기</h3>
+                <button onClick={() => setSuiteModalOpen(false)} className="text-muted-foreground hover:text-foreground">✕</button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {suiteList.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">저장된 Suite가 없습니다</p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {suiteList.map((s) => (
+                      <li key={s.id}>
+                        <button
+                          onClick={() => applySuite(s)}
+                          className="flex w-full flex-col gap-1 px-5 py-3 text-left hover:bg-muted/40"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="flex-1 text-xs font-medium text-foreground">{s.name}</span>
+                            {s.is_default && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">기본</span>}
+                          </div>
+                          <div className="flex gap-3 text-[10px] text-muted-foreground">
+                            <span>케이스 {s.case_ids.length}건</span>
+                            <span>플로우 {s.flow_ids.length}개</span>
+                            {s.description && <span className="truncate">{s.description}</span>}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </div>

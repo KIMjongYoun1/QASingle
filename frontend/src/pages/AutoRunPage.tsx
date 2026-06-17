@@ -59,6 +59,10 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
   const [history, setHistory] = useState<RunSummary[]>([]);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
 
+  // Suite 불러오기 모달 상태
+  const [suiteModalOpen, setSuiteModalOpen] = useState(false);
+  const [suiteList, setSuiteList] = useState<import('../api/suites').TestSuite[]>([]);
+
   // flows/selectedFlowIds 이후에 선언 — 선택된 플로우에 속한 케이스는 개별 목록에서 제외
   const allRunnable = useMemo(() => data.mgr.cases.filter((c) => c.endpoint), [data.mgr.cases]);
   const selectedFlowCaseIds = useMemo(() => {
@@ -80,6 +84,22 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
   const openHistoryModal = () => {
     if (projectId) listRuns(projectId).then(setHistory).catch(() => { toast.error('히스토리를 불러오지 못했습니다'); });
     setHistoryModalOpen(true);
+  };
+
+  const openSuiteModal = () => {
+    if (!projectId) return;
+    import('../api/suites').then(({ listSuites }) => {
+      listSuites(projectId).then(setSuiteList).catch(() => { toast.error('Suite를 불러오지 못했습니다'); });
+    });
+    setSuiteModalOpen(true);
+  };
+
+  const applySuite = (suite: import('../api/suites').TestSuite) => {
+    setSelected(new Set(suite.case_ids));
+    setSelectedFlowIds(new Set(suite.flow_ids));
+    setSuiteModalOpen(false);
+    setTab('cases');
+    toast.success(`Suite "${suite.name}" 적용 — 케이스 ${suite.case_ids.length}건 · 플로우 ${suite.flow_ids.length}개`);
   };
 
   const restoreFromHistory = async (runId: number) => {
@@ -491,6 +511,9 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
               <span>{selected.size}/{runnable.length} 개별 케이스 선택 (병렬)</span>
             </div>
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={openSuiteModal}>
+                Suite 불러오기
+              </Button>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={openHistoryModal}>
                 히스토리에서 불러오기
               </Button>
@@ -1025,6 +1048,42 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
                 </button>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {suiteModalOpen && (
+        <Dialog open onOpenChange={(o) => { if (!o) setSuiteModalOpen(false); }}>
+          <DialogContent className="w-[480px] max-w-[90vw]">
+            <DialogHeader>
+              <DialogTitle>Suite 불러오기</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-muted-foreground">선택하면 케이스·플로우가 자동 세팅됩니다. 실행은 직접 버튼을 눌러 진행하세요.</p>
+            <div className="mt-1 max-h-[60vh] overflow-y-auto">
+              {suiteList.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">저장된 Suite가 없습니다</p>
+              ) : (
+                <div className="flex flex-col divide-y divide-border">
+                  {suiteList.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => applySuite(s)}
+                      className="flex w-full flex-col gap-1 px-1 py-3 text-left transition-colors hover:bg-muted/40"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="flex-1 text-sm font-medium text-foreground">{s.name}</span>
+                        {s.is_default && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">기본</span>}
+                      </div>
+                      <div className="flex gap-3 text-[11px] text-muted-foreground">
+                        <span>케이스 {s.case_ids.length}건</span>
+                        <span>플로우 {s.flow_ids.length}개</span>
+                        {s.description && <span className="truncate">{s.description}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </DialogContent>
         </Dialog>
       )}

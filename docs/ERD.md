@@ -88,12 +88,25 @@ erDiagram
         timestamp changed_at
     }
 
+    test_suites {
+        int id PK
+        int project_id FK
+        varchar name
+        text description
+        json case_ids
+        json flow_ids
+        boolean is_default
+        timestamp created_at
+        timestamp updated_at
+    }
+
     projects ||--o{ qa_snapshots         : "1:1 (upsert)"
     projects ||--o{ deploy_histories     : "1:N"
     projects ||--o{ test_flows           : "1:N"
     projects ||--o{ test_runs            : "1:N"
     projects ||--o{ notification_configs : "1:N"
     projects ||--o{ case_histories       : "1:N (auto)"
+    projects ||--o{ test_suites          : "1:N"
     test_runs ||--o{ run_comments        : "1:N (append-only)"
 ```
 
@@ -107,4 +120,5 @@ erDiagram
 | projects → test_runs | 자동 실행 1회 = 1행. case_results / flow_results / mgr_snapshot 불변 |
 | projects → notification_configs | Discord / Slack 웹훅 설정. 여러 개 등록 가능 |
 | projects → case_histories | 케이스 관리 저장 시 스냅샷 diff로 자동 생성. 수정·삭제 없음 |
+| projects → test_suites | 케이스+플로우 묶음 스위트. is_default 설정 시 진입 시 자동 적용 |
 | test_runs → run_comments | 추가 전용 댓글. 수정·삭제 엔드포인트 없음 |

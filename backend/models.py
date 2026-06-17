@@ -18,6 +18,7 @@ class Project(Base):
     test_flows = relationship("TestFlow", back_populates="project", cascade="all, delete-orphan")
     notification_configs = relationship("NotificationConfig", back_populates="project", cascade="all, delete-orphan")
     case_histories = relationship("CaseHistory", back_populates="project", cascade="all, delete-orphan")
+    test_suites = relationship("TestSuite", back_populates="project", cascade="all, delete-orphan")
 
 
 class QASnapshot(Base):
@@ -134,3 +135,20 @@ class CaseHistory(Base):
     changed_at = Column(DateTime(timezone=True), server_default=func.now())
 
     project = relationship("Project", back_populates="case_histories")
+
+
+class TestSuite(Base):
+    """프로젝트 비즈니스 로직 단위 묶음 — 케이스+플로우 세트를 이름 붙여 저장"""
+    __tablename__ = "test_suites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    case_ids = Column(JSON, default=list)    # ["TC-001", ...]
+    flow_ids = Column(JSON, default=list)    # [1, 2, ...]
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    project = relationship("Project", back_populates="test_suites")
