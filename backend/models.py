@@ -1,0 +1,103 @@
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from database import Base
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    snapshots = relationship("QASnapshot", back_populates="project", cascade="all, delete-orphan")
+    deploy_histories = relationship("DeployHistory", back_populates="project", cascade="all, delete-orphan")
+    test_runs = relationship("TestRun", back_populates="project", cascade="all, delete-orphan")
+    test_flows = relationship("TestFlow", back_populates="project", cascade="all, delete-orphan")
+
+
+class QASnapshot(Base):
+    """전체 QA 데이터 스냅샷 (HTML의 db 객체 그대로 저장)"""
+    __tablename__ = "qa_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    data = Column(JSON, nullable=False)  # HTML의 db 객체 전체
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    project = relationship("Project", back_populates="snapshots")
+
+
+class DeployHistory(Base):
+    """배포 이력 (LLM 분석용 별도 저장)"""
+    __tablename__ = "deploy_histories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    version = Column(String(100))
+    environment = Column(String(50))
+    deploy_type = Column(String(100))
+    deployer = Column(String(100))
+    target_server = Column(String(255))
+    summary = Column(Text)
+    total_cases = Column(Integer, default=0)
+    done_cases = Column(Integer, default=0)
+    fail_cases = Column(Integer, default=0)
+    deployed_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("Project", back_populates="deploy_histories")
+
+
+class TestRun(Base):
+    """OpenAPI 기반 자동 실행 작업 상태 및 결과 히스토리"""
+    __tablename__ = "test_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    base_url = Column(String(500))
+    status = Column(String(20), default="pending")  # pending | running | done | failed
+    total = Column(Integer, default=0)
+    done = Column(Integer, default=0)
+    fail = Column(Integer, default=0)
+    error = Column(Text)
+    label = Column(String(255), nullable=True)             # 사용자 지정 레이블
+    case_ids = Column(JSON, nullable=True)                 # 실행한 개별 케이스 ID 목록
+    flow_ids = Column(JSON, nullable=True)                 # 실행한 플로우 ID 목록
+    case_results = Column(JSON, nullable=True)             # 케이스별 결과 스냅샷
+    flow_results = Column(JSON, nullable=True)             # 플로우별 결과 스냅샷
+    mgr_snapshot = Column(JSON, nullable=True)             # 실행 시점 케이스 내용 스냅샷 (id/name/endpoint/method/catId)
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    finished_at = Column(DateTime(timezone=True))
+
+    project = relationship("Project", back_populates="test_runs")
+    comments = relationship("RunComment", back_populates="run", cascade="all, delete-orphan",
+                            order_by="RunComment.created_at")
+
+
+class RunComment(Base):
+    """실행 히스토리에 남기는 메모/댓글"""
+    __tablename__ = "run_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(Integer, ForeignKey("test_runs.id", ondelete="CASCADE"), nullable=False)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    run = relationship("TestRun", back_populates="comments")
+
+
+class TestFlow(Base):
+    """순서가 고정된 테스트 플로우 (결제, 회원가입 등 업무 단위)"""
+    __tablename__ = "test_flows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    steps = Column(JSON, nullable=False, default=list)  # [{"case_id": str, "order": int}]
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    project = relationship("Project", back_populates="test_flows")

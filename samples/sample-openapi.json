@@ -1,0 +1,354 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sample Payment/Settlement API",
+    "version": "1.0.0",
+    "description": "QA-Server 자동 실행 기능 테스트용 샘플 연동규격서 (결제/정산 도메인)"
+  },
+  "servers": [
+    { "url": "https://jsonplaceholder.typicode.com" }
+  ],
+  "paths": {
+    "/users": {
+      "get": {
+        "tags": ["결제 고객"],
+        "summary": "결제 고객 목록 조회",
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      },
+      "post": {
+        "tags": ["결제 고객"],
+        "summary": "결제 고객 등록",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "phone"],
+                "properties": {
+                  "name": { "type": "string", "description": "고객명" },
+                  "email": { "type": "string", "description": "이메일" },
+                  "phone": { "type": "string", "description": "연락처" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created" },
+          "400": { "description": "Bad Request" }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "tags": ["결제 고객"],
+        "summary": "결제 고객 상세 조회 (결제수단 포함)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "OK" },
+          "404": { "description": "Not Found" }
+        }
+      },
+      "put": {
+        "tags": ["결제 고객"],
+        "summary": "결제 고객 정보 수정",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      },
+      "delete": {
+        "tags": ["결제 고객"],
+        "summary": "결제 고객 탈퇴 처리",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "204": { "description": "No Content" }
+        }
+      }
+    },
+    "/posts": {
+      "get": {
+        "tags": ["결제 거래"],
+        "summary": "고객별 결제 거래 내역 조회",
+        "parameters": [
+          { "name": "userId", "in": "query", "required": true, "schema": { "type": "integer" }, "description": "고객 ID" }
+        ],
+        "responses": {
+          "200": { "description": "OK" },
+          "400": { "description": "Bad Request" }
+        }
+      },
+      "post": {
+        "tags": ["결제 거래"],
+        "summary": "결제 거래 요청 생성",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title", "body", "userId"],
+                "properties": {
+                  "title": { "type": "string", "description": "가맹점명" },
+                  "body": { "type": "string", "description": "결제 상세 내역" },
+                  "userId": { "type": "integer", "description": "고객 ID" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created" },
+          "400": { "description": "Bad Request" }
+        }
+      }
+    },
+    "/posts/{id}": {
+      "get": {
+        "tags": ["결제 거래"],
+        "summary": "결제 거래 상세 조회",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "OK" },
+          "404": { "description": "Not Found" }
+        }
+      },
+      "put": {
+        "tags": ["결제 거래"],
+        "summary": "결제 거래 정보 수정",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title", "body"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "body": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      },
+      "patch": {
+        "tags": ["결제 거래"],
+        "summary": "결제 상태 부분 변경 (승인/취소)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": { "type": "string", "enum": ["APPROVED", "CANCELED"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      },
+      "delete": {
+        "tags": ["결제 거래"],
+        "summary": "결제 거래 취소",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/comments": {
+      "get": {
+        "tags": ["결제 문의"],
+        "summary": "거래별 결제 문의 내역 조회",
+        "parameters": [
+          { "name": "postId", "in": "query", "required": true, "schema": { "type": "integer" }, "description": "결제 거래 ID" }
+        ],
+        "responses": {
+          "200": { "description": "OK" },
+          "400": { "description": "Bad Request" }
+        }
+      },
+      "post": {
+        "tags": ["결제 문의"],
+        "summary": "결제 문의 등록",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "body", "postId"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "body": { "type": "string" },
+                  "postId": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created" },
+          "400": { "description": "Bad Request" }
+        }
+      }
+    },
+    "/todos": {
+      "get": {
+        "tags": ["정산 작업"],
+        "summary": "고객별 정산 작업 목록 조회",
+        "parameters": [
+          { "name": "userId", "in": "query", "required": true, "schema": { "type": "integer" }, "description": "고객 ID" }
+        ],
+        "responses": {
+          "200": { "description": "OK" },
+          "400": { "description": "Bad Request" }
+        }
+      },
+      "post": {
+        "tags": ["정산 작업"],
+        "summary": "정산 작업 등록",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "title", "completed"],
+                "properties": {
+                  "userId": { "type": "integer", "description": "고객 ID" },
+                  "title": { "type": "string", "description": "정산 작업명" },
+                  "completed": { "type": "boolean", "description": "정산 완료 여부" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Created" },
+          "400": { "description": "Bad Request" }
+        }
+      }
+    },
+    "/todos/{id}": {
+      "get": {
+        "tags": ["정산 작업"],
+        "summary": "정산 작업 상세 조회",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "OK" },
+          "404": { "description": "Not Found" }
+        }
+      },
+      "put": {
+        "tags": ["정산 작업"],
+        "summary": "정산 작업 완료 처리",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["completed"],
+                "properties": {
+                  "completed": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/albums": {
+      "get": {
+        "tags": ["정산 배치"],
+        "summary": "고객별 정산 배치 목록 조회",
+        "parameters": [
+          { "name": "userId", "in": "query", "required": true, "schema": { "type": "integer" }, "description": "고객 ID" }
+        ],
+        "responses": {
+          "200": { "description": "OK" },
+          "400": { "description": "Bad Request" }
+        }
+      }
+    },
+    "/albums/{id}": {
+      "get": {
+        "tags": ["정산 배치"],
+        "summary": "정산 배치 상세 조회",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "OK" },
+          "404": { "description": "Not Found" }
+        }
+      }
+    },
+    "/photos": {
+      "get": {
+        "tags": ["정산 배치"],
+        "summary": "정산 배치 내 영수증 이미지 목록 조회",
+        "parameters": [
+          { "name": "albumId", "in": "query", "required": true, "schema": { "type": "integer" }, "description": "정산 배치 ID" }
+        ],
+        "responses": {
+          "200": { "description": "OK" },
+          "400": { "description": "Bad Request" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+direction: right
+
+히스토리페이지: 실행 히스토리 {
+  H1: 히스토리 선택
+  H2: 불러오기 클릭
+  H1 -> H2
+}
+
+케이스관리페이지: 케이스 관리 {
+  C1: 히스토리에서\n불러오기 버튼
+  C2: 실행 목록 모달
+  C3: 케이스 필터 적용\n+ pendingRunRestore 설정
+  C1 -> C2 -> C3
+}
+
+스토어: Zustand Store {
+  Z1: pendingRunRestore\n(caseIds / flowIds / baseUrl)
+}
+
+자동실행페이지: 자동 실행 {
+  A1: useEffect\npendingRunRestore 감지
+  A2: selected /\nselectedFlowIds 복원
+  A3: cases 탭으로 이동
+  A1 -> A2
+  A1 -> A3
+}
+
+히스토리페이지.H2 -> 자동실행페이지.A2: 직접 복원
+히스토리페이지.H2 -> 자동실행페이지.A3
+
+케이스관리페이지.C3 -> 스토어.Z1: set
+스토어.Z1 -> 자동실행페이지.A1: trigger

@@ -1,0 +1,31 @@
+direction: down
+
+시작: 플로우 실행 시작 {shape: oval}
+
+스텝1: 스텝 1 실행
+결과1: 결과? {shape: diamond}
+스텝2: 스텝 2 실행
+결과2: 결과? {shape: diamond}
+스텝3: 스텝 3 실행
+결과3: 결과? {shape: diamond}
+
+스킵2: 스텝 2 스킵 {style.fill: "#fef3c7"}
+스킵3: 스텝 3 스킵 {style.fill: "#fef3c7"}
+
+완료: 플로우 결과 저장 {shape: oval}
+
+시작 -> 스텝1
+스텝1 -> 결과1
+결과1 -> 스텝2: Pass
+결과1 -> 스킵2: Fail
+
+스텝2 -> 결과2
+결과2 -> 스텝3: Pass
+결과2 -> 스킵3: Fail
+
+스텝3 -> 결과3
+결과3 -> 완료: Pass
+결과3 -> 완료: Fail
+
+스킵2 -> 스킵3
+스킵3 -> 완료

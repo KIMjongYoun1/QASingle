@@ -1,0 +1,16 @@
+direction: right
+
+MGR: qa_snapshots\n.mgr {shape: cylinder}
+RUN: test_runs\n(mgr_snapshot) {shape: cylinder}
+CR: case_results\nflow_results {shape: cylinder}
+CMT: run_comments {shape: cylinder}
+DEP: qa_snapshots\n.dep {shape: cylinder}
+DH: deploy_histories {shape: cylinder}
+AI: Claude API {shape: hexagon}
+
+MGR -> RUN: 실행 시 스냅샷 저장
+RUN -> CR: 결과 기록 (불변)
+RUN -> CMT: 댓글 연결
+
+DEP -> DH: 정규화 동기화\n(version+env 기준 upsert)
+DH -> AI: LLM 분석 요청
