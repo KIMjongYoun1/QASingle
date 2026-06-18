@@ -71,7 +71,10 @@
 ### 📄 테스트결과서 / 배포결과서
 - 테스트 완료 결과를 커버 페이지 포함 문서 형식으로 정리
 - 배포 버전 / 환경 / 유형(정기·긴급·롤백 등) 분류 기록
-- **AI 분석** — Anthropic Claude API 기반 배포 패턴 리포트
+- **AI 분석** — 분석 모달에서 LLM 프로바이더를 **실시간 선택** (Local Ollama / Claude API)
+  - `Local (Ollama)`: 로컬 설치 모델 — `ollama serve` 실행 필요
+  - `Claude API`: Anthropic 외부 API — `ANTHROPIC_API_KEY` 환경변수 필요
+  - > ⚠️ **샘플 구현** — 분석 프롬프트 및 응답 품질은 선택한 모델에 따라 크게 달라집니다. 실 운영 시 프롬프트 튜닝 및 모델 선택을 별도로 진행하세요.
 
 ---
 
@@ -91,7 +94,7 @@ FastAPI REST API
   ├── /api/analytics       실행 분석 (기간 필터)
   ├── /api/notifications   Discord / Slack 웹훅 설정
   ├── /api/deploy          배포결과서 이력
-  └── /api/analysis        LLM 분석 (Claude API)
+  └── /api/analysis        LLM 분석 (Local Ollama | Claude API — 요청 시 프로바이더 선택)
         │
         ▼
 PostgreSQL (9개 테이블)
@@ -204,6 +207,16 @@ npm run dev
 |---|---|---|
 | `VITE_API_URL` | `http://localhost:8000` | FastAPI 서버 URL |
 
+`backend/.env` (또는 실행 환경 변수)
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `LLM_PROVIDER` | `local` | 기본 LLM 백엔드 (`local` \| `claude`) — UI 드롭다운으로 요청별 override 가능 |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama 서버 주소 |
+| `OLLAMA_MODEL` | `llama3.2` | 사용할 로컬 모델명 |
+| `ANTHROPIC_API_KEY` | — | Claude API 키 (claude 선택 시 필수) |
+| `CLAUDE_MODEL` | `claude-sonnet-4-6` | 사용할 Claude 모델 ID |
+
 ---
 
 ## 불변성 원칙
@@ -235,5 +248,5 @@ npm run dev
 | UI 컴포넌트 | Radix UI, lucide-react, Sonner (toast) |
 | Backend | FastAPI, SQLAlchemy 2.0, Pydantic v2 |
 | Database | PostgreSQL 16 (Docker) |
-| AI | Anthropic Claude API |
+| AI (LLM) | Ollama (로컬) / Anthropic Claude API (외부) — UI에서 요청별 선택 |
 | 기타 | openpyxl (엑셀), httpx (HTTP 실행), Docker Compose |
