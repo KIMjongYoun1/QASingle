@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Send, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, Send, Pencil, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQAStore } from '../store/useQAStore';
 import {
@@ -340,6 +340,136 @@ export default function NotificationsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+      {/* 메시지 미리보기 */}
+      <NotificationPreview />
+    </div>
+  );
+}
+
+function NotificationPreview() {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<'discord' | 'slack'>('discord');
+
+  const REPORT = `📋 QA 실행 보고서
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+프로젝트  커머스 API
+레이블    Sprint 12 회귀 테스트
+실행 ID   #42
+일시      2026-06-18 09:31 UTC
+서버      https://api-stg.example.com
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+결과      ⚠️ 실행 완료 — 실패 포함
+전체      18건
+통과      15건 (83%)
+실패      3건
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+실패 케이스
+  TC-004    장바구니 items POST Negative
+  TC-011    결제 요청 confirm Negative
+  TC-017    주문 cancel Negative
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+테스트 플로우
+  ✅  로그인 → 기본 동작 플로우
+  ❌  전체 CRUD 플로우
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  return (
+    <div className="mt-8 rounded-xl border border-border">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold"
+      >
+        <span>메시지 미리보기</span>
+        {open ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-border p-4">
+          <p className="mb-3 text-xs text-muted-foreground">실제 실행 완료 시 전송되는 메시지 샘플입니다 (실패 포함 케이스 기준)</p>
+
+          {/* 탭 */}
+          <div className="mb-4 flex gap-2">
+            {(['discord', 'slack'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
+                  tab === t ? TYPE_META[t].color + ' border-current' : 'border-border text-muted-foreground hover:bg-secondary/60'
+                )}
+              >
+                {TYPE_META[t].label}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'discord' && (
+            <div className="rounded-lg bg-[#313338] p-4 font-sans text-white">
+              {/* Embed 카드 */}
+              <div className="rounded-r-lg border-l-4 border-[#f97316] bg-[#2b2d31] p-3">
+                <p className="mb-2 font-semibold text-white">⚠️ 실행 완료 — 실패 포함</p>
+                <div className="mb-2 grid grid-cols-3 gap-2 text-xs">
+                  <div><p className="text-[#b5bac1]">프로젝트</p><p className="text-white">커머스 API</p></div>
+                  <div><p className="text-[#b5bac1]">실행 레이블</p><p className="text-white">Sprint 12 회귀</p></div>
+                  <div className="col-span-3"><p className="text-[#b5bac1]">대상 서버</p><p className="font-mono text-[#00a8fc]">https://api-stg.example.com</p></div>
+                  <div><p className="text-[#b5bac1]">전체</p><p className="text-white">18</p></div>
+                  <div><p className="text-[#b5bac1]">통과</p><p className="text-white">15</p></div>
+                  <div><p className="text-[#b5bac1]">실패</p><p className="text-white">3</p></div>
+                </div>
+                <div className="mb-2 text-xs">
+                  <p className="text-[#b5bac1]">❌ 실패 케이스 (3건)</p>
+                  <p className="mt-1 text-white">• <code className="rounded bg-[#1e1f22] px-1">TC-004</code> 장바구니 items POST Negative</p>
+                  <p className="text-white">• <code className="rounded bg-[#1e1f22] px-1">TC-011</code> 결제 요청 confirm Negative</p>
+                  <p className="text-white">• <code className="rounded bg-[#1e1f22] px-1">TC-017</code> 주문 cancel Negative</p>
+                </div>
+                <div className="text-xs">
+                  <p className="text-[#b5bac1]">테스트 플로우</p>
+                  <p className="text-white">✅ 로그인 → 기본 동작 플로우</p>
+                  <p className="text-white">❌ 전체 CRUD 플로우</p>
+                </div>
+                <p className="mt-2 text-[10px] text-[#b5bac1]">Single_QA_Tools · Run #42 · 2026-06-18 09:31 UTC</p>
+              </div>
+              {/* 문서 블록 */}
+              <div className="mt-2 rounded-r-lg border-l-4 border-[#f97316] bg-[#2b2d31] p-3">
+                <pre className="overflow-x-auto text-[11px] leading-relaxed text-[#dbdee1]">{REPORT}</pre>
+              </div>
+            </div>
+          )}
+
+          {tab === 'slack' && (
+            <div className="rounded-lg bg-white p-4 font-sans text-[#1d1c1d] shadow-sm dark:bg-[#1a1d21] dark:text-[#d1d2d3]">
+              {/* Header */}
+              <p className="mb-2 text-base font-bold">⚠️ 실행 완료 — 실패 포함</p>
+              {/* Section fields */}
+              <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <div><span className="font-bold">프로젝트</span><br />커머스 API</div>
+                <div><span className="font-bold">실행 레이블</span><br />Sprint 12 회귀</div>
+                <div><span className="font-bold">전체</span><br />18건</div>
+                <div><span className="font-bold">통과 / 실패</span><br />15 / 3</div>
+              </div>
+              <p className="mb-2 text-sm"><span className="font-bold">대상 서버</span>: <code className="rounded bg-[#f8f8f8] px-1 dark:bg-[#2d2d2d]">https://api-stg.example.com</code></p>
+              <hr className="my-2 border-[#e8e8e8] dark:border-[#424242]" />
+              <div className="mb-2 text-sm">
+                <p className="font-bold">❌ 실패 케이스 (3건)</p>
+                <p>• <code className="rounded bg-[#f8f8f8] px-1 dark:bg-[#2d2d2d]">TC-004</code> 장바구니 items POST Negative</p>
+                <p>• <code className="rounded bg-[#f8f8f8] px-1 dark:bg-[#2d2d2d]">TC-011</code> 결제 요청 confirm Negative</p>
+                <p>• <code className="rounded bg-[#f8f8f8] px-1 dark:bg-[#2d2d2d]">TC-017</code> 주문 cancel Negative</p>
+              </div>
+              <hr className="my-2 border-[#e8e8e8] dark:border-[#424242]" />
+              <div className="mb-2 text-sm">
+                <p className="font-bold">테스트 플로우</p>
+                <p>✅ 로그인 → 기본 동작 플로우</p>
+                <p>❌ 전체 CRUD 플로우</p>
+              </div>
+              <hr className="my-2 border-[#e8e8e8] dark:border-[#424242]" />
+              {/* 문서 블록 */}
+              <pre className="overflow-x-auto rounded bg-[#f8f8f8] p-2 text-[11px] leading-relaxed text-[#1d1c1d] dark:bg-[#2d2d2d] dark:text-[#d1d2d3]">{REPORT}</pre>
+              <hr className="my-2 border-[#e8e8e8] dark:border-[#424242]" />
+              <p className="text-[11px] text-[#696969]">Single_QA_Tools · Run #42 · 2026-06-18 09:31 UTC</p>
+            </div>
+          )}
         </div>
       )}
     </div>
