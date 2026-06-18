@@ -452,9 +452,34 @@ def _dispatch_notification(project_id: int, run, event: str, db: Session, error:
         )
         if not configs:
             return
+
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+        project_name = project.name if project else f"Project #{project_id}"
+
+        # 케이스 이름 조회용 맵 (mgr_snapshot 활용)
+        snapshot = run.mgr_snapshot or []
+        case_name_map = {c["id"]: c.get("name", c["id"]) for c in snapshot}
+
+        # 실패 케이스 목록
+        case_results = run.case_results or []
+        failed_cases = [
+            {"id": r["case_id"], "name": case_name_map.get(r["case_id"], r["case_id"])}
+            for r in case_results if r.get("pf") == "Fail"
+        ]
+
+        # 플로우 결과 요약
+        flow_results = run.flow_results or []
+
         payload = {
-            "run_id": run.id, "label": run.label,
-            "total": run.total, "fail": run.fail, "error": error,
+            "run_id": run.id,
+            "label": run.label,
+            "total": run.total,
+            "fail": run.fail,
+            "error": error,
+            "project_name": project_name,
+            "base_url": run.base_url,
+            "failed_cases": failed_cases,
+            "flow_results": flow_results,
         }
         notification_service.dispatch(
             [{"id": c.id, "type": c.type, "webhook_url": c.webhook_url,
