@@ -1,8 +1,7 @@
-import type { TestCase, TestFlow, Category, KV } from '../../types/qa';
+import type { TestCase, TestFlow, Category, KV, TstExecution } from '../../types/qa';
 import CaseTable from '../CaseTable';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Badge } from '../ui/badge';
 import { Play, Plus, Trash2, Pencil } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -17,7 +16,7 @@ interface Props {
   headers: KV[];
   isRunning: boolean;
   runningId: string | null;
-  results: TestCase[];
+  results: TstExecution[];
   cats: Category[];
   onStartRun: () => void;
   onToggle: (id: string) => void;

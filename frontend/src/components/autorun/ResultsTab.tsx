@@ -1,4 +1,4 @@
-import type { TestCase } from '../../types/qa';
+import type { TestCase, TstExecution } from '../../types/qa';
 import type { RunStatus } from '../../api/runs';
 import { Badge } from '../ui/badge';
 import { cn } from '../../lib/utils';
@@ -15,13 +15,13 @@ interface Props {
   failCount: number;
   skipCount: number;
   passRate: number;
-  individualResults: TestCase[];
-  filteredIndividual: TestCase[];
+  individualResults: TstExecution[];
+  filteredIndividual: TstExecution[];
   flowRuns: FlowRunItem[];
   resultFilter: 'all' | 'pass' | 'fail';
   onResultFilterChange: (f: 'all' | 'pass' | 'fail') => void;
   allRunnable: TestCase[];
-  tstCases: TestCase[];
+  tstCases: TstExecution[];
   run: RunStatus | null;
   onShowDiff: (id: string) => void;
 }
@@ -77,7 +77,7 @@ export default function ResultsTab({
             </div>
           )}
           {flowRuns.map((flow) => {
-            const fCases = flow.steps.map((cid) => tstCases.find((t) => t.id === cid)).filter(Boolean) as TestCase[];
+            const fCases = flow.steps.map((cid) => tstCases.find((t) => t.id === cid)).filter(Boolean) as TstExecution[];
             const fPass = fCases.filter((t) => t.pf === 'Pass').length;
             const fFail = fCases.filter((t) => t.pf !== 'Pass' && !t.actual?.includes('건너뜀')).length;
             const fSkip = fCases.filter((t) => t.actual?.includes('건너뜀')).length;
@@ -124,7 +124,7 @@ export default function ResultsTab({
 
       {/* 플로우별 결과 */}
       {flowRuns.length > 0 && flowRuns.map((flow) => {
-        const flowTstCases = flow.steps.map((cid) => tstCases.find((t) => t.id === cid)).filter(Boolean) as TestCase[];
+        const flowTstCases = flow.steps.map((cid) => tstCases.find((t) => t.id === cid)).filter(Boolean) as TstExecution[];
         const filtered = flowTstCases.filter((t) =>
           resultFilter === 'all' ? true : resultFilter === 'pass' ? t.pf === 'Pass' : t.pf !== 'Pass'
         );
