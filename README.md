@@ -167,6 +167,7 @@ cd backend
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+alembic upgrade head            # DB 마이그레이션 적용
 uvicorn main:app --reload
 ```
 
@@ -219,6 +220,27 @@ npm run dev
 
 ---
 
+## DB 마이그레이션 (Alembic)
+
+스키마 변경은 `create_all()` 대신 Alembic으로 관리합니다.
+
+```bash
+cd backend
+source venv/bin/activate
+
+# 운영 DB에 최신 마이그레이션 반영
+alembic upgrade head
+
+# 모델 변경 후 새 마이그레이션 생성
+alembic revision --autogenerate -m "변경 내용 설명"
+alembic upgrade head
+```
+
+> `alembic.ini`의 `sqlalchemy.url` 기본값이 로컬 개발 DB로 설정되어 있습니다.  
+> 운영 환경에서는 `DATABASE_URL` 환경변수를 설정하면 자동으로 우선 적용됩니다.
+
+---
+
 ## 불변성 원칙
 
 실행이 완료된 결과는 **절대 수정되지 않습니다.**
@@ -246,7 +268,7 @@ npm run dev
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS v4, shadcn/ui |
 | 상태관리 | Zustand, TanStack Query |
 | UI 컴포넌트 | Radix UI, lucide-react, Sonner (toast) |
-| Backend | FastAPI, SQLAlchemy 2.0, Pydantic v2 |
+| Backend | FastAPI, SQLAlchemy 2.0, Pydantic v2, Alembic |
 | Database | PostgreSQL 16 (Docker) |
 | AI (LLM) | Ollama (로컬) / Anthropic Claude API (외부) — UI에서 요청별 선택 |
 | 기타 | openpyxl (엑셀), httpx (HTTP 실행), Docker Compose |
