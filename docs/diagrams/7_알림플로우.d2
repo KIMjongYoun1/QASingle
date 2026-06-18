@@ -2,12 +2,30 @@ direction: right
 
 실행완료: "실행 완료 / 실패\n_execute_run"
 
+payload: "payload 구성" {
+  p1: project_name
+  p2: label · total · fail
+  p3: failed_cases 목록
+  p4: flow_results 목록
+  p5: base_url
+}
+
+실행완료 -> payload
+
 조회: "notification_configs 조회\nenabled=true\n+ event 구독"
 
-실행완료 -> 조회
+payload -> 조회
 
-DISCORD: "Discord Webhook\nEmbed 카드\n색상: 초록·주황·빨강" {shape: hexagon}
-SLACK: "Slack Webhook\ntext 메시지" {shape: hexagon}
+DISCORD: "Discord Webhook" {shape: hexagon
+  d1: 요약 Embed 카드\n(프로젝트·통과·실패·실패케이스·플로우)
+  d2: 문서 보고서\n(code block)
+  d1 -> d2
+}
+SLACK: "Slack Webhook" {shape: hexagon
+  s1: Block Kit 섹션\n(프로젝트·통과·실패·실패케이스·플로우)
+  s2: 문서 보고서\n(code block)
+  s1 -> s2
+}
 LOG: runs.log {shape: cylinder}
 
 조회 -> DISCORD: type=discord
