@@ -98,7 +98,7 @@ class NotificationService:
             lines.append("테스트 플로우")
             for fr in flow_results:
                 f_icon = "✅" if fr.get("passed") else "❌"
-                name   = fr.get("flow_name", f'Flow #{fr.get("flow_id")}')
+                name   = fr.get("flow_name") or f"Flow #{fr.get('flow_id')}"
                 lines.append(f"  {f_icon}  {name}")
 
         lines.append(sep)
@@ -140,7 +140,8 @@ class NotificationService:
             flow_lines = []
             for fr in flow_results:
                 f_icon = "✅" if fr.get("passed") else "❌"
-                flow_lines.append(f"{f_icon} {fr.get('flow_name', f'Flow #{fr.get(\"flow_id\")}')}")
+                flow_name = fr.get("flow_name") or f"Flow #{fr.get('flow_id')}"
+                flow_lines.append(f"{f_icon} {flow_name}")
             fields.append({"name": "테스트 플로우", "value": "\n".join(flow_lines), "inline": False})
 
         # 문서 Embed (code block)
@@ -211,7 +212,8 @@ class NotificationService:
             flow_lines = []
             for fr in flow_results:
                 f_icon = "✅" if fr.get("passed") else "❌"
-                flow_lines.append(f"{f_icon} {fr.get('flow_name', f'Flow #{fr.get(\"flow_id\")}')}")
+                flow_name = fr.get("flow_name") or f"Flow #{fr.get('flow_id')}"
+                flow_lines.append(f"{f_icon} {flow_name}")
             blocks += [
                 {"type": "divider"},
                 {"type": "section", "text": {"type": "mrkdwn", "text": "*테스트 플로우*\n" + "\n".join(flow_lines)}},
