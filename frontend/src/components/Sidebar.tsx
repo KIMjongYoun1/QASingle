@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket, BarChart2, GitCommitHorizontal, LayoutDashboard, Layers } from 'lucide-react';
+import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket, BarChart2, GitCommitHorizontal, LayoutDashboard, Layers, Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Project, QAData, PF, DepPF } from '../types/qa';
 import { listProjects, createProject } from '../api/projects';
@@ -8,7 +8,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { cn } from '../lib/utils';
 
-export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history' | 'analytics' | 'case-history' | 'suites';
+export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history' | 'analytics' | 'case-history' | 'suites' | 'notifications';
 
 interface Props {
   tab: TabKey;
@@ -41,6 +41,13 @@ const GROUPS: { key: string; label: string; tabs: { key: TabKey; label: string; 
       { key: 'case-history', label: '변경 이력', icon: <GitCommitHorizontal className="size-3.5" /> },
       { key: 'tst', label: '테스트결과서', icon: <FileText className="size-3.5" />, tree: 'tst' },
       { key: 'dep', label: '배포결과서', icon: <FileText className="size-3.5" />, tree: 'dep' },
+    ],
+  },
+  {
+    key: 'settings',
+    label: 'Settings',
+    tabs: [
+      { key: 'notifications', label: '알림 설정', icon: <Bell className="size-3.5" /> },
     ],
   },
 ];
