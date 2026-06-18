@@ -20,17 +20,18 @@ LLM_PROVIDER   = os.getenv("LLM_PROVIDER", "local")       # "local" | "claude"
 OLLAMA_URL     = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL   = os.getenv("OLLAMA_MODEL", "llama3.2")
 
-ANTHROPIC_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL   = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+# API 키·모델은 호출 시점에 os.getenv로 직접 읽음 (재시작 없이 .env 변경 반영 가능)
 
 _TIMEOUT = 120
 
 
 class LLMService:
 
-    async def complete(self, prompt: str) -> str:
-        """프롬프트를 받아 텍스트 응답을 반환. 실패 시 예외 raise."""
-        if LLM_PROVIDER == "claude":
+    async def complete(self, prompt: str, provider: str | None = None) -> str:
+        """프롬프트를 받아 텍스트 응답을 반환.
+        provider가 주어지면 환경변수보다 우선 적용. 실패 시 예외 raise."""
+        resolved = provider or LLM_PROVIDER
+        if resolved == "claude":
             return await self._call_claude(prompt)
         return await self._call_local(prompt)
 
@@ -48,19 +49,21 @@ class LLMService:
     # ── Claude API ──────────────────────────────────────────────────────────
 
     async def _call_claude(self, prompt: str) -> str:
-        if not ANTHROPIC_KEY:
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        model   = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+        if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다")
 
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
-                    "x-api-key": ANTHROPIC_KEY,
+                    "x-api-key": api_key,
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },
                 json={
-                    "model": CLAUDE_MODEL,
+                    "model": model,
                     "max_tokens": 2048,
                     "messages": [{"role": "user", "content": prompt}],
                 },

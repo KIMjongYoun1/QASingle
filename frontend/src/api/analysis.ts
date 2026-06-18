@@ -1,10 +1,11 @@
 import { api } from './client';
 
 export type AnalysisMode = 'testcase' | 'deploy' | 'business';
+export type LLMProvider = 'local' | 'claude';
 
-export async function analyze(projectId: number, mode: AnalysisMode, question?: string) {
-  const { data } = await api.post('/api/analysis/analyze', { project_id: projectId, mode, question });
-  return data as { result: string; mode: AnalysisMode };
+export async function analyze(projectId: number, mode: AnalysisMode, question?: string, provider?: LLMProvider) {
+  const { data } = await api.post('/api/analysis/analyze', { project_id: projectId, mode, question, provider });
+  return data as { result: string; mode: AnalysisMode; provider: LLMProvider };
 }
 
 export interface DeployHistoryItem {

@@ -11,7 +11,8 @@ router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 class AnalysisRequest(BaseModel):
     project_id: int
-    mode: str  # "testcase" | "deploy" | "business"
+    mode: str                        # "testcase" | "deploy" | "business"
+    provider: Optional[str] = None   # "local" | "claude" — None이면 LLM_PROVIDER 환경변수 사용
     question: Optional[str] = None
 
 
@@ -63,15 +64,16 @@ async def analyze(body: AnalysisRequest, db: Session = Depends(get_db)):
     data = snap.data
     prompt = _build_prompt(body.mode, body.question, data, proj.name)
 
+    resolved = body.provider or LLM_PROVIDER
     try:
-        result = await llm_service.complete(prompt)
-        return {"result": result, "mode": body.mode, "provider": LLM_PROVIDER}
+        result = await llm_service.complete(prompt, provider=body.provider)
+        return {"result": result, "mode": body.mode, "provider": resolved}
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         provider_hint = (
             f"Ollama 서버({OLLAMA_URL})에 연결할 수 없습니다. ollama serve 로 실행해주세요."
-            if LLM_PROVIDER == "local"
+            if resolved == "local"
             else "Claude API 호출에 실패했습니다. ANTHROPIC_API_KEY를 확인해주세요."
         )
         raise HTTPException(status_code=503, detail=f"{provider_hint} ({e})")
