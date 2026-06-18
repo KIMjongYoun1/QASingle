@@ -291,11 +291,23 @@ for proj_name, cat_names, endpoints in PROJECT_DOMAINS:
         ))
 
     # ── 알림 설정 (절반 프로젝트) ──────────────────────────────────────
+    def rand_str(n, chars="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"):
+        return ''.join(random.choices(chars, k=n))
+
     if random.random() > 0.5:
         t = random.choice(["discord", "slack"])
+        if t == "discord":
+            webhook_id = str(random.randint(10**17, 10**18 - 1))
+            webhook_token = rand_str(68)
+            url = f"https://discord.com/api/webhooks/{webhook_id}/{webhook_token}"
+        else:
+            t_id = "T" + rand_str(8, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+            b_id = "B" + rand_str(8, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+            token = rand_str(24)
+            url = f"https://hooks.slack.com/services/{t_id}/{b_id}/{token}"
         db.add(models.NotificationConfig(
             project_id=pid, name=f"{proj_name} {t.capitalize()} 알림", type=t,
-            webhook_url=f"https://hooks.{'discord.com/api/webhooks/00000/DUMMY' if t == 'discord' else 'slack.com/services/T000/B000/DUMMY'}",
+            webhook_url=url,
             enabled=True, events=["run_completed", "run_failed"],
         ))
 
