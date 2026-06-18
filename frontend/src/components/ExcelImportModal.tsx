@@ -115,7 +115,7 @@ export default function ExcelImportModal({ onClose, onImported }: Props) {
         (async () => {
           try {
             const res = await parseExcel(file, config);
-            importCases(res.cases, res.categories);
+            await importCases(res.cases, res.categories);
             setPreviewCount(res.total);
             toast.success(`${res.total}건의 케이스가 추가되었습니다`);
             onImported?.();

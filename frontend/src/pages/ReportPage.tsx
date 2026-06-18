@@ -171,7 +171,7 @@ export default function ReportPage({ mode, projectName, focusCase }: Props) {
       else if (ext === 'xlsx' || ext === 'xls') result = await parseExcelReport(file, mode);
       else if (ext === 'md') result = await parseMarkdownReport(file, mode);
       else throw new Error('지원하지 않는 파일 형식입니다 (json/xlsx/md)');
-      restoreReport(mode, { cover: result.cover, cases: result.cases as any }, (result as any).catNames);
+      await restoreReport(mode, { cover: result.cover, cases: result.cases as any }, (result as any).catNames);
       toast.success('결과서를 복원했습니다');
     } catch (e: any) {
       toast.error(e?.message || '복원에 실패했습니다');

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import type { QAData, Category, KV, TestCase } from '../types/qa';
 import { emptyQAData } from '../types/qa';
-import { loadQAData, saveQAData } from '../api/qa';
+import { loadQAData, saveQAData, importCasesApi, reorderCasesApi, restoreSectionApi } from '../api/qa';
 
 const CATCOLS = ['#4f8cff', '#7c3aed', '#16a34a', '#dc2626', '#d97706', '#0891b2', '#be185d', '#0ea5e9'];
 
@@ -31,19 +31,19 @@ interface QAState {
   updateCase: (id: string, patch: Partial<TestCase>) => void;
   deleteCase: (id: string) => void;
   clearAllCases: () => void;
-  reorderCases: (fromIdx: number, toIdx: number) => void;
+  reorderCases: (fromIdx: number, toIdx: number) => Promise<void>;
   addCategory: (name: string) => void;
   deleteCategory: (id: string) => void;
   updateExec: (mode: 'tst' | 'dep', id: string, field: string, value: string) => void;
   updateCover: (mode: 'tst' | 'dep', patch: Record<string, string>) => void;
-  importCases: (cases: Partial<TestCase>[], categoryNames: string[]) => void;
+  importCases: (cases: Partial<TestCase>[], categoryNames: string[]) => Promise<void>;
   setApiBaseUrl: (url: string) => void;
   setApiHeaders: (headers: KV[]) => void;
   restoreReport: (
     mode: 'tst' | 'dep',
     payload: { cover?: Record<string, string>; cases: { id: string; actual: string; pf: string; owner: string; date: string; notes: string }[] },
     catNames?: Record<string, string>
-  ) => void;
+  ) => Promise<void>;
 }
 
 export const useQAStore = create<QAState>((set, get) => ({
@@ -55,7 +55,6 @@ export const useQAStore = create<QAState>((set, get) => ({
 
   setPendingRunRestore: (r) => set({ pendingRunRestore: r }),
   setActiveSuiteId: (id) => set({ activeSuiteId: id }),
-
   setProjectId: (id) => set({ projectId: id, activeSuiteId: null }),
 
   loadProject: async (id) => {
@@ -70,18 +69,23 @@ export const useQAStore = create<QAState>((set, get) => ({
     }
   },
 
+  // 백엔드 save가 sync 후 canonical 데이터를 반환하면 스토어를 갱신
   scheduleSave: () => {
     const { projectId, data } = get();
     if (!projectId) return;
     if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      saveQAData(projectId, data).catch((e) => {
+    saveTimer = setTimeout(async () => {
+      try {
+        const synced = await saveQAData(projectId, data);
+        if (synced) set({ data: synced });
+      } catch (e) {
         console.error(e);
         toast.error('저장에 실패했습니다');
-      });
+      }
     }, 600);
   },
 
+  // 낙관적 로컬 sync — 즉각적인 UI 반응용 (백엔드가 최종 정합성 보장)
   syncCases: () => {
     set((state) => {
       const mgrIds = new Set(state.data.mgr.cases.map((m) => m.id));
@@ -133,14 +137,24 @@ export const useQAStore = create<QAState>((set, get) => ({
     get().syncCases();
   },
 
-  reorderCases: (fromIdx, toIdx) => {
+  // 낙관적 로컬 업데이트 후 백엔드에서 순서 확정
+  reorderCases: async (fromIdx, toIdx) => {
     set((state) => {
       const arr = [...state.data.mgr.cases];
       const [moved] = arr.splice(fromIdx, 1);
       arr.splice(toIdx, 0, moved);
       return { data: { ...state.data, mgr: { ...state.data.mgr, cases: arr } } };
     });
-    get().scheduleSave();
+
+    const { projectId, data } = get();
+    if (!projectId) return;
+    try {
+      const synced = await reorderCasesApi(projectId, data.mgr.cases.map((c) => c.id));
+      set({ data: synced });
+    } catch (e) {
+      console.error(e);
+      toast.error('순서 저장에 실패했습니다');
+    }
   },
 
   addCategory: (name) => {
@@ -184,43 +198,17 @@ export const useQAStore = create<QAState>((set, get) => ({
     get().scheduleSave();
   },
 
-  importCases: (cases, categoryNames) => {
-    set((state) => {
-      const existingCatNames = new Map(state.data.mgr.cats.map((c) => [c.name, c.id]));
-      const newCats: Category[] = [...state.data.mgr.cats];
-      categoryNames.forEach((name) => {
-        if (name && !existingCatNames.has(name)) {
-          const cat: Category = { id: `mc${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name, color: CATCOLS[newCats.length % CATCOLS.length] };
-          newCats.push(cat);
-          existingCatNames.set(name, cat.id);
-        }
-      });
-      const existingIds = new Set(state.data.mgr.cases.map((c) => c.id));
-      const newCases: TestCase[] = cases
-        .filter((c) => c.id && !existingIds.has(c.id))
-        .map((c) => ({
-          id: c.id!,
-          name: c.name || '',
-          type: c.type || 'Positive',
-          input: c.input || '',
-          expected: c.expected || '',
-          actual: '',
-          pf: 'Pass',
-          owner: '',
-          date: '',
-          catId: (c as any).catName ? existingCatNames.get((c as any).catName) || '' : '',
-          baseUrl: c.baseUrl,
-          endpoint: c.endpoint,
-          method: c.method,
-          expectedStatus: c.expectedStatus,
-          headers: (c as any).headers,
-          queryParams: (c as any).queryParams,
-          body: (c as any).body,
-          assertions: (c as any).assertions,
-        }));
-      return { data: { ...state.data, mgr: { cats: newCats, cases: [...state.data.mgr.cases, ...newCases] } } };
-    });
-    get().syncCases();
+  // 백엔드에서 카테고리 생성·ID 중복 제거·sync 처리
+  importCases: async (cases, categoryNames) => {
+    const { projectId } = get();
+    if (!projectId) return;
+    try {
+      const synced = await importCasesApi(projectId, cases, categoryNames);
+      set({ data: synced });
+    } catch (e) {
+      console.error(e);
+      throw e; // 호출자(AutoRunPage, ExcelImportModal)가 toast 처리
+    }
   },
 
   setApiBaseUrl: (url) => {
@@ -233,20 +221,15 @@ export const useQAStore = create<QAState>((set, get) => ({
     get().scheduleSave();
   },
 
-  restoreReport: (mode, payload, catNames) => {
-    set((state) => {
-      const section = state.data[mode];
-      const catByName = new Map(section.cats.map((c) => [c.name, c.id]));
-      const restoredById = new Map(payload.cases.map((c) => [c.id, c]));
-      const cases = section.cases.map((c) => {
-        const r = restoredById.get(c.id);
-        if (!r) return c;
-        const catId = catNames?.[c.id] ? catByName.get(catNames[c.id]) ?? c.catId : c.catId;
-        return { ...c, actual: r.actual, pf: r.pf as any, owner: r.owner, date: r.date, notes: r.notes, catId };
-      });
-      const cover = payload.cover ? { ...section.cover, ...payload.cover } : section.cover;
-      return { data: { ...state.data, [mode]: { ...section, cover, cases } } };
+  // 백엔드에서 섹션 복원 처리
+  restoreReport: async (mode, payload, catNames) => {
+    const { projectId } = get();
+    if (!projectId) return;
+    const synced = await restoreSectionApi(projectId, mode, {
+      cover: payload.cover,
+      cases: payload.cases as any,
+      cat_names: catNames,
     });
-    get().scheduleSave();
+    set({ data: synced });
   },
 }));

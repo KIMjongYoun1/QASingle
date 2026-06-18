@@ -150,9 +150,14 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
     }
   };
 
-  const confirmImport = () => {
+  const confirmImport = async () => {
     if (!analysis) return;
-    importCases(analysis.cases, analysis.categories);
+    try {
+      await importCases(analysis.cases, analysis.categories);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || '임포트에 실패했습니다');
+      return;
+    }
     if (analysis.baseUrl) setApiBaseUrl(analysis.baseUrl);
     toast.success(`${analysis.total}개 케이스 임포트 완료${analysis.baseUrl ? ` (기본 URL: ${analysis.baseUrl})` : ''}`);
     setImported(true);
