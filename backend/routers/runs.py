@@ -480,10 +480,13 @@ def _dispatch_notification(project_id: int, run, event: str, db: Session, error:
             "base_url": run.base_url,
             "failed_cases": failed_cases,
             "flow_results": flow_results,
+            "case_results": run.case_results or [],
+            "mgr_snapshot": run.mgr_snapshot or [],
         }
         notification_service.dispatch(
             [{"id": c.id, "type": c.type, "webhook_url": c.webhook_url,
-              "enabled": c.enabled, "events": c.events or []} for c in configs],
+              "enabled": c.enabled, "events": c.events or [],
+              "attach_excel": bool(c.attach_excel)} for c in configs],
             event,
             payload,
         )

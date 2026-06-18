@@ -117,6 +117,7 @@ class NotificationConfig(Base):
     webhook_url = Column(String(500), nullable=False)
     enabled = Column(Boolean, default=True)
     events = Column(JSON, default=list)                  # ["run_completed", "run_failed"]
+    attach_excel = Column(Boolean, default=False)        # Discord 알림 시 Excel 첨부 여부
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     project = relationship("Project", back_populates="notification_configs")

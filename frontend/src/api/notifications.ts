@@ -8,6 +8,7 @@ export interface NotificationConfig {
   webhook_url: string;
   enabled: boolean;
   events: string[];
+  attach_excel: boolean;
   created_at: string | null;
 }
 
@@ -24,6 +25,7 @@ export async function createNotification(body: {
   webhook_url: string;
   enabled?: boolean;
   events?: string[];
+  attach_excel?: boolean;
 }): Promise<NotificationConfig> {
   const res = await fetch(`${BASE}/api/notifications`, {
     method: 'POST',
@@ -36,7 +38,7 @@ export async function createNotification(body: {
 
 export async function updateNotification(
   id: number,
-  patch: Partial<Pick<NotificationConfig, 'name' | 'webhook_url' | 'enabled' | 'events'>>
+  patch: Partial<Pick<NotificationConfig, 'name' | 'webhook_url' | 'enabled' | 'events' | 'attach_excel'>>
 ): Promise<NotificationConfig> {
   const res = await fetch(`${BASE}/api/notifications/${id}`, {
     method: 'PATCH',

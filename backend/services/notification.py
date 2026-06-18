@@ -7,8 +7,10 @@
 """
 
 import httpx
+import json
 from datetime import datetime, timezone
 from typing import Literal
+from services.excel_report import build_excel_report
 
 NotifyEvent = Literal["run_completed", "run_failed"]
 
@@ -26,7 +28,7 @@ class NotificationService:
                 continue
             try:
                 if cfg["type"] == "discord":
-                    self._send_discord(cfg["webhook_url"], event, payload)
+                    self._send_discord(cfg["webhook_url"], event, payload, attach_excel=bool(cfg.get("attach_excel")))
                 elif cfg["type"] == "slack":
                     self._send_slack(cfg["webhook_url"], event, payload)
             except Exception as e:
@@ -106,7 +108,7 @@ class NotificationService:
 
     # ── Discord ────────────────────────────────────────────────────────────
 
-    def _send_discord(self, url: str, event: NotifyEvent, payload: dict):
+    def _send_discord(self, url: str, event: NotifyEvent, payload: dict, attach_excel: bool = False):
         icon, title   = self._summary(event, payload)
         run_id        = payload.get("run_id")
         label         = payload.get("label") or f"Run #{run_id}"
@@ -161,7 +163,17 @@ class NotificationService:
                 },
             ]
         }
-        httpx.post(url, json=body, timeout=_TIMEOUT)
+        if attach_excel:
+            xlsx_bytes = build_excel_report(payload)
+            filename   = f"qa_run_{run_id}.xlsx"
+            httpx.post(
+                url,
+                data={"payload_json": json.dumps(body)},
+                files={"file": (filename, xlsx_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+                timeout=_TIMEOUT,
+            )
+        else:
+            httpx.post(url, json=body, timeout=_TIMEOUT)
 
     # ── Slack ──────────────────────────────────────────────────────────────
 

@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 import os
 import logging
 import logging.handlers
+import sqlalchemy
 
 from database import engine
 import models
@@ -58,6 +59,15 @@ for _name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
 
 # ── DB 테이블 생성 ─────────────────────────────────────────────────────────
 models.Base.metadata.create_all(bind=engine)
+
+# ── 컬럼 추가 마이그레이션 (ADD COLUMN IF NOT EXISTS) ──────────────────────
+with engine.connect() as _conn:
+    _conn.execute(
+        sqlalchemy.text(
+            "ALTER TABLE notification_configs ADD COLUMN IF NOT EXISTS attach_excel BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+    )
+    _conn.commit()
 
 app = FastAPI(title="QA Server", version="1.0.0")
 

@@ -30,6 +30,7 @@ const emptyForm = {
   type: 'discord' as 'discord' | 'slack',
   webhook_url: '',
   events: ['run_completed', 'run_failed'] as string[],
+  attach_excel: false,
 };
 
 export default function NotificationsPage() {
@@ -180,7 +181,7 @@ export default function NotificationsPage() {
             />
           </div>
 
-          <div className="mb-4">
+          <div className="mb-3">
             <label className="mb-1.5 block text-[11px] text-muted-foreground">구독 이벤트</label>
             <div className="flex gap-2">
               {Object.entries(EVENT_LABELS).map(([key, label]) => (
@@ -199,6 +200,25 @@ export default function NotificationsPage() {
               ))}
             </div>
           </div>
+
+          {form.type === 'discord' ? (
+            <label className="mb-4 flex cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={form.attach_excel}
+                onChange={(e) => setForm({ ...form, attach_excel: e.target.checked })}
+                className="size-4 rounded accent-primary"
+              />
+              <span className="text-xs text-foreground">Excel 첨부 — 테스트 수행 내역서 (.xlsx) 파일을 함께 전송합니다</span>
+            </label>
+          ) : (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800/40 dark:bg-amber-900/20">
+              <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                <span className="font-semibold">파일 첨부 불가</span> — Slack Incoming Webhook은 파일 첨부를 지원하지 않습니다.
+                실제 사용 시 Slack Bot Token + <code className="font-mono">files.upload</code> API로 구현하세요.
+              </p>
+            </div>
+          )}
 
           <div className="flex gap-2">
             <Button onClick={handleCreate} className="flex-1">추가</Button>
@@ -270,6 +290,26 @@ export default function NotificationsPage() {
                         })}
                       </div>
                     </div>
+
+                    {cfg.type === 'discord' ? (
+                      <label className="mb-3 flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={editForm.attach_excel ?? cfg.attach_excel}
+                          onChange={(e) => setEditForm({ ...editForm, attach_excel: e.target.checked })}
+                          className="size-4 rounded accent-primary"
+                        />
+                        <span className="text-xs text-foreground">Excel 첨부 — 테스트 수행 내역서 (.xlsx) 파일을 함께 전송합니다</span>
+                      </label>
+                    ) : (
+                      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800/40 dark:bg-amber-900/20">
+                        <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                          <span className="font-semibold">파일 첨부 불가</span> — Slack Incoming Webhook은 파일 첨부를 지원하지 않습니다.
+                          실제 사용 시 Slack Bot Token + <code className="font-mono">files.upload</code> API로 구현하세요.
+                        </p>
+                      </div>
+                    )}
+
                     <div className="flex gap-2">
                       <Button size="sm" onClick={() => handleSaveEdit(cfg.id)}><Check className="mr-1 size-3.5" /> 저장</Button>
                       <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><X className="mr-1 size-3.5" /> 취소</Button>
@@ -291,6 +331,11 @@ export default function NotificationsPage() {
                             {EVENT_LABELS[e] ?? e}
                           </span>
                         ))}
+                        {cfg.type === 'discord' && cfg.attach_excel && (
+                          <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800/40 dark:bg-emerald-900/20 dark:text-emerald-400">
+                            Excel 첨부
+                          </span>
+                        )}
                       </div>
                     </div>
 

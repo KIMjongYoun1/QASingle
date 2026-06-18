@@ -16,6 +16,7 @@ class NotificationConfigCreate(BaseModel):
     webhook_url: str
     enabled: bool = True
     events: list[str] = ["run_completed", "run_failed"]
+    attach_excel: bool = False
 
 
 class NotificationConfigUpdate(BaseModel):
@@ -23,6 +24,7 @@ class NotificationConfigUpdate(BaseModel):
     webhook_url: Optional[str] = None
     enabled: Optional[bool] = None
     events: Optional[list[str]] = None
+    attach_excel: Optional[bool] = None
 
 
 def _serialize(cfg: models.NotificationConfig) -> dict:
@@ -34,6 +36,7 @@ def _serialize(cfg: models.NotificationConfig) -> dict:
         "webhook_url": cfg.webhook_url,
         "enabled": cfg.enabled,
         "events": cfg.events or [],
+        "attach_excel": bool(cfg.attach_excel),
         "created_at": cfg.created_at.isoformat() if cfg.created_at else None,
     }
 
