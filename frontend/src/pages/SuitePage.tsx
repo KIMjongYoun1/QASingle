@@ -26,7 +26,6 @@ export default function SuitePage() {
   const deleteCase = useQAStore((s) => s.deleteCase);
 
   const allCases = data.mgr.cases;
-  const allFlows: { id: number; name: string }[] = (data as any).flows ?? [];
 
   const [suites, setSuites] = useState<TestSuite[]>([]);
   const [selected, setSelected] = useState<TestSuite | null>(null);

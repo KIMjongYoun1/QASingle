@@ -86,8 +86,8 @@ function HistoryItem({ entry }: { entry: CaseHistoryEntry }) {
 
   const caseName =
     entry.action === 'deleted'
-      ? (entry.before as Record<string, unknown> | null)?.name
-      : (entry.after as Record<string, unknown> | null)?.name;
+      ? (entry.before as Record<string, string> | null)?.name
+      : (entry.after as Record<string, string> | null)?.name;
 
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">

@@ -317,7 +317,7 @@ export default function DashboardPage({ onSelectProject }: Props) {
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
                       <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
-                      <Tooltip formatter={(v: number) => [`${v}%`, 'Pass율']} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                      <Tooltip formatter={(v) => [`${v}%`, 'Pass율']} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
                       <Bar dataKey="pass_rate" name="Pass율" radius={[6, 6, 0, 0]}>
                         {compareData.map((d, i) => <rect key={i} fill={d.color} />)}
                       </Bar>
@@ -357,7 +357,7 @@ export default function DashboardPage({ onSelectProject }: Props) {
                             stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.15} />
                         ))}
                         <Legend wrapperStyle={{ fontSize: 11 }} />
-                        <Tooltip formatter={(v: number, name: string) => [`${v}%`, name]} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                        <Tooltip formatter={(v, name) => [`${v}%`, name]} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
                       </RadarChart>
                     </ResponsiveContainer>
                   </div>

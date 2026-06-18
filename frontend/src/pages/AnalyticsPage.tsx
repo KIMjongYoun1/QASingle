@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Cell,
+  Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { useQAStore } from '../store/useQAStore';
 import { getAnalytics, type ProjectAnalytics } from '../api/analytics';
@@ -67,7 +67,7 @@ export default function AnalyticsPage() {
               <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
               <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
               <Tooltip
-                formatter={(v: number) => [`${v}%`, 'Pass율']}
+                formatter={(v) => [`${v}%`, 'Pass율']}
                 contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
               />
               <Line
@@ -105,7 +105,7 @@ export default function AnalyticsPage() {
                 <XAxis type="number" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
                 <YAxis type="category" dataKey="case_id" width={90} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
                 <Tooltip
-                  formatter={(v: number, name: string) => [v, name === 'fail' ? '실패' : '통과']}
+                  formatter={(v, name) => [v, name === 'fail' ? '실패' : '통과']}
                   contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
                 />
                 <Bar dataKey="pass" name="pass" stackId="a" fill={PASS_COLOR} />
