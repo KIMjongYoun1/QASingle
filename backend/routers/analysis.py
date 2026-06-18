@@ -4,13 +4,9 @@ from pydantic import BaseModel
 from typing import Optional
 from database import get_db
 import models
-import httpx
-import os
+from services.llm import llm_service, LLM_PROVIDER, OLLAMA_URL, OLLAMA_MODEL
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
-
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 
 class AnalysisRequest(BaseModel):
@@ -68,21 +64,17 @@ async def analyze(body: AnalysisRequest, db: Session = Depends(get_db)):
     prompt = _build_prompt(body.mode, body.question, data, proj.name)
 
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"{OLLAMA_URL}/api/generate",
-                json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            )
-            resp.raise_for_status()
-            result = resp.json()
-            return {"result": result.get("response", ""), "mode": body.mode}
-    except httpx.ConnectError:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Ollama 서버에 연결할 수 없습니다 ({OLLAMA_URL}). ollama serve 명령으로 실행해주세요."
-        )
+        result = await llm_service.complete(prompt)
+        return {"result": result, "mode": body.mode, "provider": LLM_PROVIDER}
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM 분석 실패: {str(e)}")
+        provider_hint = (
+            f"Ollama 서버({OLLAMA_URL})에 연결할 수 없습니다. ollama serve 로 실행해주세요."
+            if LLM_PROVIDER == "local"
+            else "Claude API 호출에 실패했습니다. ANTHROPIC_API_KEY를 확인해주세요."
+        )
+        raise HTTPException(status_code=503, detail=f"{provider_hint} ({e})")
 
 
 def _build_prompt(mode: str, question: Optional[str], data: dict, project_name: str) -> str:
