@@ -30,7 +30,7 @@ _run_executor = ThreadPoolExecutor(max_workers=RUN_MAX_CONCURRENCY, thread_name_
 class RunCreateRequest(BaseModel):
     project_id: int
     base_url: str
-    auth_header: Optional[str] = None
+    default_headers: Optional[dict[str, str]] = None
     case_ids: list[str] = []       # 순서 무관 개별 케이스 (병렬 실행)
     flow_ids: list[int] = []       # 순서 고정 플로우 (순차 실행, fail 시 해당 플로우 중단)
 
@@ -82,7 +82,7 @@ def create_run(req: RunCreateRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(run)
 
-    _run_executor.submit(_execute_run, run.id, req.project_id, req.base_url, req.auth_header, individual, flows_data)
+    _run_executor.submit(_execute_run, run.id, req.project_id, req.base_url, req.default_headers or {}, individual, flows_data)
     return {"run_id": run.id, "total": total, "flow_count": len(flows_data)}
 
 
@@ -164,6 +164,66 @@ def add_comment(run_id: int, payload: dict, db: Session = Depends(get_db)):
     return {"id": comment.id, "text": comment.text, "created_at": comment.created_at.isoformat()}
 
 
+def _get_json_path(obj, path: str):
+    """점 표기법으로 JSON 경로 탐색 (예: "data.success", "items.0.id")"""
+    if not path:
+        return obj
+    current = obj
+    for part in path.split('.'):
+        if current is None:
+            return None
+        if isinstance(current, dict):
+            current = current.get(part)
+        elif isinstance(current, list) and part.isdigit():
+            current = current[int(part)]
+        else:
+            return None
+    return current
+
+
+def _eval_assertion(a: dict, resp) -> dict:
+    """단일 assertion 평가. 결과 dict 반환"""
+    target = a.get('target', 'status_code')
+    operator = a.get('operator', 'eq')
+    expected = str(a.get('value') or '')
+    path = a.get('path') or ''
+
+    try:
+        if target == 'status_code':
+            actual_val = str(resp.status_code)
+        elif target == 'body_json':
+            actual_val = _get_json_path(resp.json(), path)
+            actual_val = str(actual_val) if actual_val is not None else 'null'
+        elif target == 'body_text':
+            actual_val = resp.text
+        elif target == 'header':
+            actual_val = resp.headers.get(path, '')
+        else:
+            actual_val = ''
+
+        if operator == 'eq':
+            passed = actual_val == expected
+        elif operator == 'contains':
+            passed = expected in str(actual_val)
+        elif operator == 'not_contains':
+            passed = expected not in str(actual_val)
+        elif operator == 'exists':
+            passed = actual_val not in (None, 'null', '')
+        elif operator == 'not_exists':
+            passed = actual_val in (None, 'null', '')
+        elif operator == 'gt':
+            passed = float(actual_val) > float(expected)
+        elif operator == 'lt':
+            passed = float(actual_val) < float(expected)
+        else:
+            passed = False
+    except Exception as e:
+        actual_val = f'평가 오류: {e}'
+        passed = False
+
+    return {'target': target, 'path': path, 'operator': operator, 'expected': expected, 'actual': str(actual_val), 'passed': passed}
+
+
 def _make_request(client: httpx.Client, case: dict, base_url: str) -> tuple[bool, str, str]:
     """httpx로 단일 케이스 실행. (passed, actual_text, notes) 반환"""
     method = (case.get("method") or "GET").upper()
@@ -179,8 +239,12 @@ def _make_request(client: httpx.Client, case: dict, base_url: str) -> tuple[bool
         except Exception:
             body_data = case["body"]
 
+    # 케이스별 baseUrl이 있으면 우선 사용, 없으면 전역 base_url fallback
+    effective_base = (case.get("baseUrl") or base_url).rstrip("/")
+    full_url = f"{effective_base}{endpoint}"
+
     qs = f"?{urlencode(query_params)}" if query_params else ""
-    request_line = f"{method} {base_url.rstrip('/')}{endpoint}{qs}"
+    request_line = f"{method} {full_url}{qs}"
 
     try:
         kwargs: dict = {"params": query_params, "headers": case_headers}
@@ -188,11 +252,44 @@ def _make_request(client: httpx.Client, case: dict, base_url: str) -> tuple[bool
             kwargs["json"] = body_data if isinstance(body_data, dict) else None
             if not isinstance(body_data, dict):
                 kwargs["content"] = str(body_data)
-        resp = client.request(method, endpoint, **kwargs)
-        passed = resp.status_code == expected_status
-        actual_text = f"{resp.status_code} 응답"
+        resp = client.request(method, full_url, **kwargs)
+
+        status_ok = resp.status_code == expected_status
         body_snippet = resp.text[:500]
-        notes = f"[Request] {request_line}\n[Response {resp.status_code}] {body_snippet}"
+
+        # assertion 평가
+        assertions = case.get('assertions') or []
+        assertion_results = [_eval_assertion(a, resp) for a in assertions]
+
+        if assertion_results:
+            passed = status_ok and all(r['passed'] for r in assertion_results)
+            pass_count = sum(1 for r in assertion_results if r['passed'])
+            total_count = len(assertion_results)
+            status_icon = '✓' if status_ok else '✗'
+            if pass_count == total_count:
+                actual_text = f"{status_icon} {resp.status_code} | 모든 조건 통과 ({total_count}개)"
+            else:
+                actual_text = f"✗ {resp.status_code} | {pass_count}/{total_count} 조건 통과"
+        else:
+            passed = status_ok
+            actual_text = f"{resp.status_code} 응답"
+
+        # notes 구성
+        op_labels = {'eq': '=', 'contains': '포함', 'not_contains': '미포함', 'exists': '존재', 'not_exists': '미존재', 'gt': '>', 'lt': '<'}
+        target_labels = {'status_code': '상태코드', 'body_text': '바디 텍스트'}
+        notes_lines = [f"[Request] {request_line}", f"[Response {resp.status_code}] {body_snippet}"]
+        if assertion_results:
+            notes_lines.append('[Assertions]')
+            for r in assertion_results:
+                icon = '✓' if r['passed'] else '✗'
+                t_label = target_labels.get(r['target']) or (f"body.{r['path']}" if r['target'] == 'body_json' else f"헤더[{r['path']}]")
+                op_label = op_labels.get(r['operator'], r['operator'])
+                if r['operator'] in ('exists', 'not_exists'):
+                    notes_lines.append(f"  {icon} {t_label} {op_label} → 실제: {r['actual']}")
+                else:
+                    notes_lines.append(f"  {icon} {t_label} {op_label} '{r['expected']}' → 실제: {r['actual']}")
+        notes = '\n'.join(notes_lines)
+
     except Exception as e:
         passed = False
         actual_text = f"요청 실패: {str(e)}"
@@ -201,11 +298,10 @@ def _make_request(client: httpx.Client, case: dict, base_url: str) -> tuple[bool
     return passed, actual_text, notes
 
 
-def _run_individual_case(case: dict, base_url: str, auth_header: Optional[str],
+def _run_individual_case(case: dict, base_url: str, default_headers: dict,
                          project_id: int, run_id: int, lock: threading.Lock):
     """개별 케이스 병렬 실행 워커"""
-    headers = {"Authorization": auth_header} if auth_header else {}
-    with httpx.Client(base_url=base_url.rstrip("/"), headers=headers, timeout=30) as client:
+    with httpx.Client(base_url=base_url.rstrip("/"), headers=default_headers, timeout=30) as client:
         passed, actual_text, notes = _make_request(client, case, base_url)
 
     now_str = datetime.now().strftime("%Y-%m-%dT%H:%M")
@@ -222,7 +318,7 @@ def _run_individual_case(case: dict, base_url: str, auth_header: Optional[str],
         db.close()
 
 
-def _execute_run(run_id: int, project_id: int, base_url: str, auth_header: Optional[str],
+def _execute_run(run_id: int, project_id: int, base_url: str, default_headers: dict,
                  cases: list[dict], flows: list[dict] | None = None):
     db = SessionLocal()
     try:
@@ -237,7 +333,7 @@ def _execute_run(run_id: int, project_id: int, base_url: str, auth_header: Optio
         if cases:
             with ThreadPoolExecutor(max_workers=CASE_PARALLEL_WORKERS) as pool:
                 futures = {
-                    pool.submit(_run_individual_case, case, base_url, auth_header, project_id, run_id, lock): case
+                    pool.submit(_run_individual_case, case, base_url, default_headers, project_id, run_id, lock): case
                     for case in cases
                 }
                 for future in as_completed(futures):
@@ -249,8 +345,7 @@ def _execute_run(run_id: int, project_id: int, base_url: str, auth_header: Optio
         # 플로우: 순차 실행 (fail 시 해당 플로우 즉시 중단)
         flow_results = []
         if flows:
-            headers = {"Authorization": auth_header} if auth_header else {}
-            with httpx.Client(base_url=base_url.rstrip("/"), headers=headers, timeout=30) as client:
+            with httpx.Client(base_url=base_url.rstrip("/"), headers=default_headers, timeout=30) as client:
                 for flow in flows:
                     flow_result = {
                         "flow_id": flow["flow_id"],

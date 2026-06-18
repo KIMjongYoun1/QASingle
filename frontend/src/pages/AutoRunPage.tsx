@@ -24,6 +24,7 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
   const projectId = useQAStore((s) => s.projectId);
   const updateCase = useQAStore((s) => s.updateCase);
   const setApiBaseUrl = useQAStore((s) => s.setApiBaseUrl);
+  const setApiHeaders = useQAStore((s) => s.setApiHeaders);
   const importCases = useQAStore((s) => s.importCases);
   const loadProject = useQAStore((s) => s.loadProject);
   const pendingRunRestore = useQAStore((s) => s.pendingRunRestore);
@@ -31,7 +32,7 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [baseUrl, setBaseUrl] = useState(data.apiBaseUrl || '');
-  const [authHeader, setAuthHeader] = useState('');
+  const [headersOpen, setHeadersOpen] = useState(false);
   const [run, setRun] = useState<RunStatus | null>(null);
   const [diffCaseId, setDiffCaseId] = useState<string | null>(null);
   const [specFileName, setSpecFileName] = useState('');
@@ -259,9 +260,9 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
   };
 
   const startRun = async () => {
-    if (!projectId || !baseUrl.trim()) return;
+    if (!projectId) return;
     if (selected.size === 0 && selectedFlowIds.size === 0) return;
-    if (data.apiBaseUrl !== baseUrl) setApiBaseUrl(baseUrl);
+    if (baseUrl.trim() && data.apiBaseUrl !== baseUrl) setApiBaseUrl(baseUrl);
 
     const flowIds = Array.from(selectedFlowIds);
     const selectedFlows = flows.filter((f) => selectedFlowIds.has(f.id));
@@ -285,7 +286,8 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
 
     let run_id: number;
     try {
-      ({ run_id } = await createRun(projectId, baseUrl.trim(), orderRef.current, authHeader.trim(), flowIds));
+      const hdrs = Object.fromEntries((data.apiHeaders ?? []).filter((h) => h.key.trim()).map((h) => [h.key.trim(), h.value]));
+      ({ run_id } = await createRun(projectId, baseUrl.trim(), orderRef.current, hdrs, flowIds));
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || '실행 시작에 실패했습니다');
       return;
@@ -399,21 +401,6 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
         <h2 className="text-base font-bold text-foreground">🚀 자동 실행</h2>
         <span className="text-xs text-muted-foreground">연동규격서 업로드 → 케이스 검토/수정 → 실행</span>
-
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Input
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="대상 서버 URL"
-            className="h-8 w-56 text-xs"
-          />
-          <Input
-            value={authHeader}
-            onChange={(e) => setAuthHeader(e.target.value)}
-            placeholder="인증 헤더 (선택)"
-            className="h-8 w-44 text-xs"
-          />
-        </div>
       </div>
 
       {run && (
@@ -500,8 +487,8 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
         </TabsContent>
 
         <TabsContent value="cases" className="mt-4 flex min-h-0 flex-1 flex-col gap-3 overflow-auto">
-          {/* 헤더: 요약 + 불러오기 + 실행 버튼 */}
-          <div className="flex items-center justify-between">
+          {/* 헤더: 요약 + 불러오기 + 실행 설정 + 실행 버튼 */}
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               {activeFlows.length > 0 && (
                 <span className="flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-primary">
@@ -510,20 +497,39 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
               )}
               <span>{selected.size}/{runnable.length} 개별 케이스 선택 (병렬)</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" className="gap-1.5" onClick={openSuiteModal}>
                 Suite 불러오기
               </Button>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={openHistoryModal}>
                 히스토리에서 불러오기
               </Button>
-            <Button
-              onClick={startRun}
-              disabled={(selected.size === 0 && selectedFlowIds.size === 0) || !baseUrl.trim() || isRunning}
-              className="gap-1.5"
-            >
-              <Play className="size-4" /> 전체 수행
-            </Button>
+              <div className="h-4 w-px bg-border" />
+              <Input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="대상 서버 URL (예: https://api.example.com)"
+                className="h-8 w-52 text-xs"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-xs"
+                onClick={() => setHeadersOpen(true)}
+              >
+                헤더{(data.apiHeaders?.filter((h) => h.key.trim()).length ?? 0) > 0 && (
+                  <span className="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
+                    {data.apiHeaders!.filter((h) => h.key.trim()).length}
+                  </span>
+                )}
+              </Button>
+              <Button
+                onClick={startRun}
+                disabled={(selected.size === 0 && selectedFlowIds.size === 0) || isRunning}
+                className="gap-1.5"
+              >
+                <Play className="size-4" /> 전체 수행
+              </Button>
             </div>
           </div>
 
@@ -1163,6 +1169,58 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
                   <pre className="overflow-auto rounded-md border border-border bg-muted/30 px-3 py-2 text-[11px]">{analysisDetailCase.body}</pre>
                 </div>
               )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {headersOpen && (
+        <Dialog open onOpenChange={(o) => { if (!o) setHeadersOpen(false); }}>
+          <DialogContent className="w-[480px] max-w-[90vw]">
+            <DialogHeader>
+              <DialogTitle>기본 헤더 설정</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-muted-foreground">모든 API 요청에 공통으로 적용할 헤더입니다. 케이스별 헤더가 있으면 케이스 헤더가 우선합니다.</p>
+            <div className="mt-3 flex flex-col gap-1">
+              {(data.apiHeaders ?? []).map((h, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <input
+                    placeholder="헤더 이름 (예: Authorization)"
+                    value={h.key}
+                    onChange={(e) => {
+                      const next = [...(data.apiHeaders ?? [])];
+                      next[i] = { ...next[i], key: e.target.value };
+                      setApiHeaders(next);
+                    }}
+                    className="h-8 flex-1 rounded-md border border-input bg-background px-2 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <input
+                    placeholder="헤더 값 (예: Bearer abc123)"
+                    value={h.value}
+                    onChange={(e) => {
+                      const next = [...(data.apiHeaders ?? [])];
+                      next[i] = { ...next[i], value: e.target.value };
+                      setApiHeaders(next);
+                    }}
+                    className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-destructive"
+                    onClick={() => setApiHeaders((data.apiHeaders ?? []).filter((_, j) => j !== i))}
+                  >✕</Button>
+                </div>
+              ))}
+              {(data.apiHeaders ?? []).length === 0 && (
+                <p className="rounded-md border border-dashed border-border py-3 text-center text-xs text-muted-foreground">헤더 없음</p>
+              )}
+            </div>
+            <div className="mt-2 flex justify-between">
+              <Button size="sm" variant="outline" onClick={() => setApiHeaders([...(data.apiHeaders ?? []), { key: '', value: '' }])}>
+                + 헤더 추가
+              </Button>
+              <Button size="sm" onClick={() => setHeadersOpen(false)}>닫기</Button>
             </div>
           </DialogContent>
         </Dialog>

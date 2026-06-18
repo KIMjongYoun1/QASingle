@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
-import type { QAData, Category, TestCase } from '../types/qa';
+import type { QAData, Category, KV, TestCase } from '../types/qa';
 import { emptyQAData } from '../types/qa';
 import { loadQAData, saveQAData } from '../api/qa';
 
@@ -30,6 +30,7 @@ interface QAState {
   addCase: (c: TestCase) => void;
   updateCase: (id: string, patch: Partial<TestCase>) => void;
   deleteCase: (id: string) => void;
+  clearAllCases: () => void;
   reorderCases: (fromIdx: number, toIdx: number) => void;
   addCategory: (name: string) => void;
   deleteCategory: (id: string) => void;
@@ -37,6 +38,7 @@ interface QAState {
   updateCover: (mode: 'tst' | 'dep', patch: Record<string, string>) => void;
   importCases: (cases: Partial<TestCase>[], categoryNames: string[]) => void;
   setApiBaseUrl: (url: string) => void;
+  setApiHeaders: (headers: KV[]) => void;
   restoreReport: (
     mode: 'tst' | 'dep',
     payload: { cover?: Record<string, string>; cases: { id: string; actual: string; pf: string; owner: string; date: string; notes: string }[] },
@@ -126,6 +128,11 @@ export const useQAStore = create<QAState>((set, get) => ({
     get().syncCases();
   },
 
+  clearAllCases: () => {
+    set((state) => ({ data: { ...state.data, mgr: { ...state.data.mgr, cases: [] } } }));
+    get().syncCases();
+  },
+
   reorderCases: (fromIdx, toIdx) => {
     set((state) => {
       const arr = [...state.data.mgr.cases];
@@ -202,12 +209,14 @@ export const useQAStore = create<QAState>((set, get) => ({
           owner: '',
           date: '',
           catId: (c as any).catName ? existingCatNames.get((c as any).catName) || '' : '',
+          baseUrl: c.baseUrl,
           endpoint: c.endpoint,
           method: c.method,
           expectedStatus: c.expectedStatus,
           headers: (c as any).headers,
           queryParams: (c as any).queryParams,
           body: (c as any).body,
+          assertions: (c as any).assertions,
         }));
       return { data: { ...state.data, mgr: { cats: newCats, cases: [...state.data.mgr.cases, ...newCases] } } };
     });
@@ -216,6 +225,11 @@ export const useQAStore = create<QAState>((set, get) => ({
 
   setApiBaseUrl: (url) => {
     set((state) => ({ data: { ...state.data, apiBaseUrl: url } }));
+    get().scheduleSave();
+  },
+
+  setApiHeaders: (headers) => {
+    set((state) => ({ data: { ...state.data, apiHeaders: headers } }));
     get().scheduleSave();
   },
 

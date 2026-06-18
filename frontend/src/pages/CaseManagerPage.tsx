@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { useQAStore } from '../store/useQAStore';
 import { listRuns, getRun, type RunSummary } from '../api/runs';
 import { listSuites, type TestSuite } from '../api/suites';
-import type { CaseType, KV, PF, TestCase } from '../types/qa';
+import type { Assertion, CaseType, KV, PF, TestCase } from '../types/qa';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -22,14 +22,91 @@ import { cn } from '../lib/utils';
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 const STATUS_PRESETS = ['200', '201', '204', '400', '401', '403', '404', '409', '500'];
 
+const ASSERTION_TARGETS: { value: Assertion['target']; label: string }[] = [
+  { value: 'status_code', label: '상태코드' },
+  { value: 'body_json', label: '바디 JSON' },
+  { value: 'body_text', label: '바디 텍스트' },
+  { value: 'header', label: '헤더' },
+];
+
+const ASSERTION_OPERATORS: { value: Assertion['operator']; label: string }[] = [
+  { value: 'eq', label: '=' },
+  { value: 'contains', label: '포함' },
+  { value: 'not_contains', label: '미포함' },
+  { value: 'exists', label: '존재' },
+  { value: 'not_exists', label: '미존재' },
+  { value: 'gt', label: '>' },
+  { value: 'lt', label: '<' },
+];
+
 const emptyForm = {
-  id: '', name: '', type: 'Positive' as CaseType, method: '', endpoint: '', expectedStatus: '' as string,
+  id: '', name: '', type: 'Positive' as CaseType, method: '', endpoint: '', baseUrl: '', expectedStatus: '' as string,
   input: '', expected: '', actual: '', pf: 'Pass' as PF, owner: '', date: '', catId: '',
-  headers: [] as KV[], queryParams: [] as KV[], body: '',
+  headers: [] as KV[], queryParams: [] as KV[], body: '', assertions: [] as Assertion[],
 };
 
 function buildInput(method: string, endpoint: string) {
   return [method, endpoint].filter(Boolean).join(' ');
+}
+
+function AssertionEditor({ rows, onChange }: { rows: Assertion[]; onChange: (rows: Assertion[]) => void }) {
+  const update = (idx: number, patch: Partial<Assertion>) => onChange(rows.map((r, i) => i === idx ? { ...r, ...patch } : r));
+  const remove = (idx: number) => onChange(rows.filter((_, i) => i !== idx));
+  const add = () => onChange([...rows, { target: 'status_code', operator: 'eq', value: '' }]);
+  const needsPath = (t: Assertion['target']) => t === 'body_json' || t === 'header';
+  const needsValue = (op: Assertion['operator']) => op !== 'exists' && op !== 'not_exists';
+
+  return (
+    <div className="mb-2">
+      <div className="mb-1 flex items-center justify-between">
+        <label className="text-[11px] text-muted-foreground">성공 판정 조건 — 응답이 이 조건을 모두 만족해야 통과</label>
+        <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={add}>+ 추가</Button>
+      </div>
+      {rows.length === 0 ? (
+        <p className="rounded-md border border-dashed border-border px-2 py-1.5 text-center text-[11px] text-muted-foreground">
+          없음 — 성공 상태코드 일치 여부로만 판정
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {rows.map((r, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 p-1.5">
+              <select
+                value={r.target}
+                onChange={(e) => update(i, { target: e.target.value as Assertion['target'], path: '' })}
+                className="h-7 rounded border border-input bg-background px-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {ASSERTION_TARGETS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              {needsPath(r.target) && (
+                <input
+                  placeholder={r.target === 'body_json' ? 'data.success' : 'Content-Type'}
+                  value={r.path || ''}
+                  onChange={(e) => update(i, { path: e.target.value })}
+                  className="h-7 w-28 rounded border border-input bg-background px-1.5 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              )}
+              <select
+                value={r.operator}
+                onChange={(e) => update(i, { operator: e.target.value as Assertion['operator'] })}
+                className="h-7 rounded border border-input bg-background px-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {ASSERTION_OPERATORS.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
+              </select>
+              {needsValue(r.operator) && (
+                <input
+                  placeholder="기대값"
+                  value={r.value || ''}
+                  onChange={(e) => update(i, { value: e.target.value })}
+                  className="h-7 min-w-0 flex-1 rounded border border-input bg-background px-1.5 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              )}
+              <button onClick={() => remove(i)} className="ml-auto h-7 rounded px-2 text-[11px] text-destructive hover:bg-destructive/10">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function KVEditor({ title, rows, onChange }: { title: string; rows: KV[]; onChange: (rows: KV[]) => void }) {
@@ -63,11 +140,10 @@ export default function CaseManagerPage() {
   const data = useQAStore((s) => s.data);
   const projectId = useQAStore((s) => s.projectId);
   const setPendingRunRestore = useQAStore((s) => s.setPendingRunRestore);
-  const activeSuiteId = useQAStore((s) => s.activeSuiteId);
-  const setActiveSuiteId = useQAStore((s) => s.setActiveSuiteId);
   const addCase = useQAStore((s) => s.addCase);
   const updateCase = useQAStore((s) => s.updateCase);
   const deleteCase = useQAStore((s) => s.deleteCase);
+  const clearAllCases = useQAStore((s) => s.clearAllCases);
   const addCategory = useQAStore((s) => s.addCategory);
   const deleteCategory = useQAStore((s) => s.deleteCategory);
 
@@ -79,19 +155,13 @@ export default function CaseManagerPage() {
   const [filterPF, setFilterPF] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const [historyFilter, setHistoryFilter] = useState<{ runId: number; label: string; caseIds: Set<string> } | null>(null);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [loadedSuites, setLoadedSuites] = useState<{ id: number; name: string; caseIds: string[] }[]>([]);
+  const [loadedHistories, setLoadedHistories] = useState<{ runId: number; label: string; caseIds: string[] }[]>([]);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyRuns, setHistoryRuns] = useState<RunSummary[]>([]);
-  const [activeSuite, setActiveSuite] = useState<TestSuite | null>(null);
   const [suiteModalOpen, setSuiteModalOpen] = useState(false);
   const [suiteList, setSuiteList] = useState<TestSuite[]>([]);
-
-  useEffect(() => {
-    if (!projectId || !activeSuiteId) { setActiveSuite(null); return; }
-    listSuites(projectId).then((list) => {
-      setActiveSuite(list.find((s) => s.id === activeSuiteId) ?? null);
-    }).catch(() => {});
-  }, [projectId, activeSuiteId]);
 
   const openSuiteModal = async () => {
     if (!projectId) return;
@@ -101,10 +171,15 @@ export default function CaseManagerPage() {
   };
 
   const applySuite = (suite: TestSuite) => {
-    setActiveSuiteId(suite.id);
-    setActiveSuite(suite);
+    setLoadedSuites((prev) => {
+      if (prev.find((s) => s.id === suite.id)) {
+        toast.info(`이미 불러온 Suite입니다: ${suite.name}`);
+        return prev;
+      }
+      toast.success(`Suite "${suite.name}" 추가됨 — ${suite.case_ids.length}건`);
+      return [...prev, { id: suite.id, name: suite.name, caseIds: suite.case_ids }];
+    });
     setSuiteModalOpen(false);
-    toast.success(`Suite "${suite.name}" 적용됨 — 케이스 ${suite.case_ids.length}건 필터`);
   };
 
   const openHistoryModal = async () => {
@@ -121,17 +196,23 @@ export default function CaseManagerPage() {
   const applyHistoryFilter = async (run: RunSummary) => {
     try {
       const detail = await getRun(run.id);
-      const allIds = new Set((detail.case_results ?? []).map((cr) => cr.case_id));
-      setHistoryFilter({ runId: run.id, label: run.label || `Run #${run.id}`, caseIds: allIds });
-      // 자동실행 케이스 선택에도 동기화 (스토어 경유)
+      const label = run.label || `Run #${run.id}`;
+      const caseIds = (detail.case_results ?? []).map((cr) => cr.case_id);
+      setLoadedHistories((prev) => {
+        if (prev.find((h) => h.runId === run.id)) {
+          toast.info(`이미 불러온 히스토리입니다: ${label}`);
+          return prev;
+        }
+        toast.success(`히스토리 추가됨: ${label} (${caseIds.length}건)`);
+        return [...prev, { runId: run.id, label, caseIds }];
+      });
       setPendingRunRestore({
         caseIds: detail.case_ids ?? [],
         flowIds: (detail.flow_ids ?? []).map(Number),
         baseUrl: detail.base_url,
-        sourceLabel: run.label || `Run #${run.id}`,
+        sourceLabel: label,
       });
       setHistoryModalOpen(false);
-      toast.success(`히스토리 필터 적용: ${run.label || `Run #${run.id}`} (${allIds.size}건) — 자동실행 케이스도 동기화됨`);
     } catch {
       toast.error('히스토리 상세 정보를 불러오지 못했습니다');
     }
@@ -176,20 +257,27 @@ export default function CaseManagerPage() {
       ...c,
       method: c.method || '',
       endpoint: c.endpoint || '',
+      baseUrl: c.baseUrl || '',
       expectedStatus: c.expectedStatus != null ? String(c.expectedStatus) : '',
       headers: c.headers ? c.headers.map((h) => ({ ...h })) : [],
       queryParams: c.queryParams ? c.queryParams.map((q) => ({ ...q })) : [],
       body: c.body || '',
+      assertions: c.assertions ? c.assertions.map((a) => ({ ...a })) : [],
     });
-    setShowAdvanced(!!(c.headers?.length || c.queryParams?.length || c.body));
+    setShowAdvanced(!!(c.baseUrl || c.headers?.length || c.queryParams?.length || c.body || c.assertions?.length));
   };
   const cancelEdit = () => { setEditId(null); setForm(emptyForm); setShowAdvanced(false); };
 
-  const suiteIds = activeSuite ? new Set(activeSuite.case_ids) : null;
+  const allLoadedIds: Set<string> | null = (() => {
+    const all = [
+      ...loadedSuites.flatMap((s) => s.caseIds),
+      ...loadedHistories.flatMap((h) => h.caseIds),
+    ];
+    return all.length > 0 ? new Set(all) : null;
+  })();
 
   const filtered = cases.filter((c) => {
-    if (suiteIds && !suiteIds.has(c.id)) return false;
-    if (historyFilter && !historyFilter.caseIds.has(c.id)) return false;
+    if (allLoadedIds && !allLoadedIds.has(c.id)) return false;
     if (search && !c.id.toLowerCase().includes(search.toLowerCase()) && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (filterType && c.type !== filterType) return false;
     if (filterPF && c.pf !== filterPF) return false;
@@ -207,7 +295,7 @@ export default function CaseManagerPage() {
               <Input placeholder={nextId()} value={form.id} disabled={!!editId} onChange={(e) => setForm({ ...form, id: e.target.value })} className="h-8 text-xs" />
             </div>
             <div>
-              <label className="mb-1 block text-[11px] text-muted-foreground">구분</label>
+              <label className="mb-1 block text-[11px] text-muted-foreground">유형 — 정상/비정상 케이스</label>
               <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v as CaseType })}>
                 <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -218,11 +306,19 @@ export default function CaseManagerPage() {
             </div>
           </div>
           <div className="mb-2">
-            <label className="mb-1 block text-[11px] text-muted-foreground">테스트 항목명</label>
+            <label className="mb-1 block text-[11px] text-muted-foreground">테스트 이름 — 어떤 케이스인지 설명</label>
             <Textarea rows={2} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="text-xs" />
           </div>
           <div className="mb-2 rounded-md border border-border bg-muted/30 p-2">
-            <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">호출 정보 (API 매칭에 사용됨)</div>
+            <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">API 요청 설정 — 실제 호출에 사용되는 정보</div>
+            <div className="mb-1.5">
+              <Input
+                placeholder="서버 주소 (비워두면 전역 설정 사용)"
+                value={form.baseUrl}
+                onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+                className="h-8 font-mono text-xs"
+              />
+            </div>
             <div className="mb-1.5 grid grid-cols-[88px_1fr] gap-1.5">
               <Select value={form.method || '__none'} onValueChange={(v) => setForm({ ...form, method: !v || v === '__none' ? '' : v })}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Method" /></SelectTrigger>
@@ -242,7 +338,7 @@ export default function CaseManagerPage() {
               <Select value={form.expectedStatus || '__none'} onValueChange={(v) => setForm({ ...form, expectedStatus: !v || v === '__none' ? '' : v })}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="기대 상태코드" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none">-- 기대 상태코드 --</SelectItem>
+                  <SelectItem value="__none">-- 성공 상태코드 선택 --</SelectItem>
                   {STATUS_PRESETS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -254,7 +350,11 @@ export default function CaseManagerPage() {
               />
             </div>
             {(form.method || form.endpoint) && (
-              <div className="mt-1.5 font-mono text-[11px] text-primary">{buildInput(form.method, form.endpoint)}</div>
+              <div className="mt-1.5 font-mono text-[11px] text-primary">
+                {form.method && <span className="mr-1 text-muted-foreground">{form.method}</span>}
+                {form.baseUrl ? form.baseUrl.replace(/\/$/, '') : <span className="text-muted-foreground/60">[전역URL]</span>}
+                {form.endpoint}
+              </div>
             )}
 
             <div className="mt-2.5 border-t border-border pt-2">
@@ -263,15 +363,15 @@ export default function CaseManagerPage() {
                 onClick={() => setShowAdvanced((v) => !v)}
                 className="flex w-full items-center justify-between text-[11px] font-semibold text-muted-foreground hover:text-foreground"
               >
-                <span>⚙ 고급 설정 (헤더 · 쿼리 파라미터 · Body)</span>
+                <span>요청 세부 설정 — 헤더 · 파라미터 · 전송 데이터 · 성공 조건</span>
                 <span>{showAdvanced ? '▲' : '▼'}</span>
               </button>
               {showAdvanced && (
                 <div className="mt-2">
-                  <KVEditor title="헤더 (Headers)" rows={form.headers} onChange={(rows) => setForm({ ...form, headers: rows })} />
-                  <KVEditor title="쿼리 파라미터 (Query Params)" rows={form.queryParams} onChange={(rows) => setForm({ ...form, queryParams: rows })} />
-                  <div>
-                    <label className="mb-1 block text-[11px] text-muted-foreground">Body (JSON, 선택)</label>
+                  <KVEditor title="요청 헤더 — 인증 토큰 등 추가 정보" rows={form.headers} onChange={(rows) => setForm({ ...form, headers: rows })} />
+                  <KVEditor title="URL 파라미터 — ?key=value 형태로 붙는 값" rows={form.queryParams} onChange={(rows) => setForm({ ...form, queryParams: rows })} />
+                  <div className="mb-2">
+                    <label className="mb-1 block text-[11px] text-muted-foreground">요청 바디 — API에 전송할 데이터 (JSON 형식)</label>
                     <Textarea
                       rows={3}
                       placeholder={'{\n  "key": "value"\n}'}
@@ -280,20 +380,21 @@ export default function CaseManagerPage() {
                       className="font-mono text-xs"
                     />
                   </div>
+                  <AssertionEditor rows={form.assertions} onChange={(rows) => setForm({ ...form, assertions: rows })} />
                 </div>
               )}
             </div>
           </div>
           <div className="mb-2">
-            <label className="mb-1 block text-[11px] text-muted-foreground">기대 결과 (설명)</label>
+            <label className="mb-1 block text-[11px] text-muted-foreground">기대 결과 — 이 케이스에서 예상되는 동작</label>
             <Textarea rows={2} value={form.expected} onChange={(e) => setForm({ ...form, expected: e.target.value })} className="text-xs" />
           </div>
           <div className="mb-2">
-            <label className="mb-1 block text-[11px] text-muted-foreground">실제 결과</label>
+            <label className="mb-1 block text-[11px] text-muted-foreground">실행 결과 — 자동 실행 후 자동으로 채워짐</label>
             <Textarea rows={2} value={form.actual} onChange={(e) => setForm({ ...form, actual: e.target.value })} className="text-xs" />
           </div>
           <div className="mb-2">
-            <label className="mb-1 block text-[11px] text-muted-foreground">Pass / Fail</label>
+            <label className="mb-1 block text-[11px] text-muted-foreground">수동 판정 — 직접 결과를 기록할 때 사용</label>
             <div className="flex gap-1">
               {(['Pass', 'Fail', 'N/A'] as PF[]).map((pfv) => {
                 const active = form.pf === pfv;
@@ -377,6 +478,7 @@ export default function CaseManagerPage() {
           </Progress>
           <div className="mt-1 text-right text-[11px] text-muted-foreground">통과율 {rate}%</div>
         </div>
+
       </div>
 
       <div className="overflow-y-auto p-5">
@@ -410,26 +512,61 @@ export default function CaseManagerPage() {
           </Select>
           <Button variant="outline" size="sm" onClick={() => { setSearch(''); setFilterType(''); setFilterPF(''); }}>✕ 초기화</Button>
           <div className="ml-auto flex gap-1.5">
+            {checkedIds.size > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => {
+                  if (confirm(`선택한 ${checkedIds.size}개 케이스를 삭제하시겠습니까?`)) {
+                    checkedIds.forEach((id) => deleteCase(id));
+                    setCheckedIds(new Set());
+                    toast.success(`${checkedIds.size}개 케이스를 삭제했습니다`);
+                  }
+                }}
+              >
+                선택 삭제 ({checkedIds.size})
+              </Button>
+            )}
+            {total > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => {
+                  if (confirm(`케이스 ${total}개를 전부 삭제하시겠습니까?\n변경 이력과 Suite 설정은 유지됩니다.`)) {
+                    clearAllCases();
+                    cancelEdit();
+                    setCheckedIds(new Set());
+                    toast.success('전체 케이스를 삭제했습니다');
+                  }
+                }}
+              >
+                전체 삭제
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={openSuiteModal}>Suite 불러오기</Button>
             <Button variant="outline" size="sm" onClick={openHistoryModal}>히스토리에서 불러오기</Button>
           </div>
         </div>
 
-        {activeSuite && (
-          <div className="mb-2 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/8 px-3 py-2 text-xs">
-            <span className="font-medium text-blue-600 dark:text-blue-400">스위트 필터:</span>
-            <span className="text-foreground">{activeSuite.name}</span>
-            <span className="text-muted-foreground">({activeSuite.case_ids.length}건 / {filtered.length}건 표시)</span>
-            <button onClick={() => setActiveSuiteId(null)} className="ml-auto text-muted-foreground hover:text-foreground">✕ 해제</button>
-          </div>
-        )}
-
-        {historyFilter && (
-          <div className="mb-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
-            <span className="text-primary font-medium">히스토리 필터:</span>
-            <span className="text-foreground">{historyFilter.label}</span>
-            <span className="text-muted-foreground">({historyFilter.caseIds.size}건 / {filtered.length}건 표시)</span>
-            <button onClick={() => setHistoryFilter(null)} className="ml-auto text-muted-foreground hover:text-foreground">✕ 필터 해제</button>
+        {(loadedSuites.length > 0 || loadedHistories.length > 0) && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/8 px-3 py-2 text-xs">
+            <span className="font-medium text-blue-600 dark:text-blue-400 shrink-0">불러온 필터</span>
+            {loadedSuites.map((s) => (
+              <span key={s.id} className="flex items-center gap-1 rounded bg-blue-500/15 px-2 py-0.5 text-[11px]">
+                Suite: {s.name} ({s.caseIds.length}건)
+                <button onClick={() => setLoadedSuites((prev) => prev.filter((x) => x.id !== s.id))} className="ml-1 text-muted-foreground hover:text-foreground">✕</button>
+              </span>
+            ))}
+            {loadedHistories.map((h) => (
+              <span key={h.runId} className="flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-[11px]">
+                히스토리: {h.label} ({h.caseIds.length}건)
+                <button onClick={() => setLoadedHistories((prev) => prev.filter((x) => x.runId !== h.runId))} className="ml-1 text-muted-foreground hover:text-foreground">✕</button>
+              </span>
+            ))}
+            <span className="text-muted-foreground">→ 합산 {allLoadedIds?.size ?? 0}건 / {filtered.length}건 표시</span>
+            <button onClick={() => { setLoadedSuites([]); setLoadedHistories([]); }} className="ml-auto shrink-0 text-muted-foreground hover:text-foreground">전체 해제</button>
           </div>
         )}
 
@@ -516,6 +653,17 @@ export default function CaseManagerPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8">
+                  <input
+                    type="checkbox"
+                    className="cursor-pointer accent-primary"
+                    checked={filtered.length > 0 && filtered.every((c) => checkedIds.has(c.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) setCheckedIds(new Set(filtered.map((c) => c.id)));
+                      else setCheckedIds(new Set());
+                    }}
+                  />
+                </TableHead>
                 <TableHead>ID</TableHead><TableHead>테스트 항목명</TableHead><TableHead>구분</TableHead><TableHead>카테고리</TableHead>
                 <TableHead>입력값</TableHead><TableHead>기대 결과</TableHead><TableHead>실제 결과</TableHead><TableHead>P/F</TableHead>
                 <TableHead>담당자</TableHead><TableHead>수행일자</TableHead><TableHead></TableHead>
@@ -523,12 +671,27 @@ export default function CaseManagerPage() {
             </TableHeader>
             <TableBody>
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={11} className="py-11 text-center text-muted-foreground">📋 테스트 케이스를 추가해주세요</TableCell></TableRow>
+                <TableRow><TableCell colSpan={12} className="py-11 text-center text-muted-foreground">📋 테스트 케이스를 추가해주세요</TableCell></TableRow>
               )}
               {filtered.map((c) => {
                 const cat = cats.find((x) => x.id === c.catId);
+                const checked = checkedIds.has(c.id);
                 return (
-                  <TableRow key={c.id}>
+                  <TableRow key={c.id} className={checked ? 'bg-primary/5' : undefined}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        className="cursor-pointer accent-primary"
+                        checked={checked}
+                        onChange={(e) => {
+                          setCheckedIds((prev) => {
+                            const next = new Set(prev);
+                            e.target.checked ? next.add(c.id) : next.delete(c.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </TableCell>
                     <TableCell className="font-mono text-xs text-primary">{c.id}</TableCell>
                     <TableCell>{c.name}</TableCell>
                     <TableCell>
@@ -550,7 +713,7 @@ export default function CaseManagerPage() {
                     <TableCell>
                       <div className="flex gap-1">
                         <Button size="sm" className="h-7 bg-warning px-2 text-warning-foreground hover:bg-warning/90" onClick={() => startEdit(c)}>수정</Button>
-                        <Button size="sm" variant="outline" className="h-7 px-2 text-destructive" onClick={() => { deleteCase(c.id); toast.success('케이스를 삭제했습니다'); }}>삭제</Button>
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-destructive" onClick={() => { deleteCase(c.id); setCheckedIds((p) => { const n = new Set(p); n.delete(c.id); return n; }); toast.success('케이스를 삭제했습니다'); }}>삭제</Button>
                       </div>
                     </TableCell>
                   </TableRow>

@@ -66,11 +66,11 @@ export interface RunComment {
   created_at: string;
 }
 
-export async function createRun(projectId: number, baseUrl: string, caseIds: string[], authHeader?: string, flowIds?: number[]) {
+export async function createRun(projectId: number, baseUrl: string, caseIds: string[], defaultHeaders?: Record<string, string>, flowIds?: number[]) {
   const { data } = await api.post('/api/runs', {
     project_id: projectId,
     base_url: baseUrl,
-    auth_header: authHeader || undefined,
+    default_headers: defaultHeaders && Object.keys(defaultHeaders).length > 0 ? defaultHeaders : undefined,
     case_ids: caseIds,
     flow_ids: flowIds || [],
   });

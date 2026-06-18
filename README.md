@@ -26,15 +26,25 @@
 
 ## 주요 기능
 
+### 🗂️ Test Suite
+- 비즈니스 로직 단위로 케이스·플로우를 묶은 **스위트** 생성·관리
+- 스위트 화면에서 케이스를 **직접 추가·수정·삭제** 가능 — 케이스 관리 탭과 실시간 동기화
+- 체크박스 토글로 스위트 포함/제외 즉시 DB 반영 (자동 저장)
+- 기본 스위트(`★`) 지정 — 프로젝트 진입 시 자동 로드
+- **Additive 불러오기** — 여러 스위트·히스토리를 합산(union) 조합, 칩 단위 해제 가능
+
 ### 📋 케이스 관리
 - 카테고리 단위로 테스트 케이스 구조화 관리
-- HTTP 메서드 / 엔드포인트 / 헤더 / 파라미터 / 바디 직접 입력
+- **Postman 표준 방식**으로 케이스별 실행 파라미터 입력 (Base URL / Method / Endpoint / Headers / Query Params / Body)
+- 케이스별 Base URL 개별 지정 가능 — 비워두면 전역 URL 자동 fallback
+- **성공 판정 조건(Assertions)** 설정 — 상태코드 · Body JSON 경로 · Body 텍스트 · 헤더를 조건으로 Pass/Fail 자동 판정
 - 연동규격서 **엑셀 임포트** 지원
-- 실행 히스토리에서 이전 설정 **원클릭 복원**
+- 스위트·히스토리 **복수 소스 additive 불러오기** — 합산(union) 필터, 칩 단위 개별 해제
 
 ### ⚡ 자동 실행
 - 개별 케이스 + **테스트 플로우** 선택 후 실제 HTTP 요청 자동 실행
-- Base URL만 지정하면 서버가 요청 대행 (Human-in-the-loop 방식)
+- **전역 설정**(Base URL, 기본 헤더 KV) + **케이스별 개별 설정** 공존 — 케이스 설정이 전역보다 우선
+- Assertions 설정 시 상태코드 + 모든 조건 동시 충족 여부로 Pass/Fail 자동 판정
 - 실행 완료 후 결과(`case_results`, `flow_results`, `mgr_snapshot`) **불변 저장**
 - 실시간 진행률 폴링 (1초 간격)
 
@@ -65,17 +75,21 @@ Browser (React SPA)
         │
         ▼
 FastAPI REST API
-  ├── /projects     프로젝트 CRUD
-  ├── /qa           QA 스냅샷 load/save (mgr · tst · dep 통합)
-  ├── /runs         자동 실행 생성 · 조회 · 폴링
-  ├── /flows        테스트 플로우 CRUD
-  ├── /deploy       배포결과서 이력
-  └── /analysis     LLM 분석 (Claude API)
+  ├── /api/projects        프로젝트 CRUD
+  ├── /api/qa              QA 스냅샷 load/save (mgr · tst · dep 통합) + 케이스 변경 이력
+  ├── /api/runs            자동 실행 생성 · 조회 · 폴링
+  ├── /api/flows           테스트 플로우 CRUD
+  ├── /api/suites          Test Suite CRUD + 기본 스위트 지정
+  ├── /api/analytics       실행 분석 (기간 필터)
+  ├── /api/notifications   Discord / Slack 웹훅 설정
+  ├── /api/deploy          배포결과서 이력
+  └── /api/analysis        LLM 분석 (Claude API)
         │
         ▼
-PostgreSQL
-  projects · qa_snapshots · deploy_histories
-  test_flows · test_runs · run_comments
+PostgreSQL (9개 테이블)
+  projects · qa_snapshots · test_flows · test_runs
+  run_comments · case_histories · test_suites
+  notification_configs · deploy_histories
 ```
 
 ---
@@ -125,10 +139,23 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-> API 서버: **http://localhost:8000**
+> API 서버: **http://localhost:8000**  
 > Swagger 문서: **http://localhost:8000/docs**
 
-### 4. 프론트엔드 실행
+### 4. 더미 데이터 삽입 (선택)
+
+실제 화면을 바로 확인하고 싶다면 시드 스크립트를 실행합니다.  
+백엔드 가상환경이 활성화된 상태에서 실행하세요.
+
+```bash
+cd backend
+python seed.py
+```
+
+50개 프로젝트 · 각 프로젝트당 케이스 수십 개 · Test Suite 3종 · 실행 이력·댓글이 한 번에 생성됩니다.  
+**주의**: 기존 데이터가 전부 삭제되고 새로 삽입됩니다.
+
+### 5. 프론트엔드 실행
 
 ```bash
 cd frontend

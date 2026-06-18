@@ -13,6 +13,16 @@ export interface KV {
   value: string;
 }
 
+export type AssertionTarget = 'status_code' | 'body_json' | 'body_text' | 'header';
+export type AssertionOperator = 'eq' | 'contains' | 'not_contains' | 'exists' | 'not_exists' | 'gt' | 'lt';
+
+export interface Assertion {
+  target: AssertionTarget;
+  path?: string;
+  operator: AssertionOperator;
+  value?: string;
+}
+
 export interface TestCase {
   id: string;
   name: string;
@@ -24,12 +34,14 @@ export interface TestCase {
   owner: string;
   date: string;
   catId: string;
+  baseUrl?: string;
   endpoint?: string;
   method?: string;
   expectedStatus?: number;
   headers?: KV[];
   queryParams?: KV[];
   body?: string;
+  assertions?: Assertion[];
 }
 
 export interface TstExecution {
@@ -89,6 +101,7 @@ export interface QAData {
   tst: { cover: TstCover; cats: Category[]; cases: TstExecution[] };
   dep: { cover: DepCover; cats: Category[]; cases: DepExecution[] };
   apiBaseUrl?: string;
+  apiHeaders?: KV[];
 }
 
 export interface Project {

@@ -15,10 +15,15 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Badge } from '../components/ui/badge';
 import { cn } from '../lib/utils';
+import CaseFormDialog from '../components/CaseFormDialog';
+import type { TestCase } from '../types/qa';
 
 export default function SuitePage() {
   const projectId = useQAStore((s) => s.projectId);
   const data = useQAStore((s) => s.data);
+  const activeSuiteId = useQAStore((s) => s.activeSuiteId);
+  const setActiveSuiteId = useQAStore((s) => s.setActiveSuiteId);
+  const deleteCase = useQAStore((s) => s.deleteCase);
 
   const allCases = data.mgr.cases;
   const allFlows: { id: number; name: string }[] = (data as any).flows ?? [];
@@ -31,6 +36,8 @@ export default function SuitePage() {
   const [editingName, setEditingName] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [caseDialogOpen, setCaseDialogOpen] = useState(false);
+  const [editingCase, setEditingCase] = useState<TestCase | null>(null);
 
   const load = async () => {
     if (!projectId) return;
@@ -107,6 +114,25 @@ export default function SuitePage() {
       setSelected(updated);
     } catch {
       toast.error('저장에 실패했습니다');
+    }
+  };
+
+  const handleDeleteCase = (c: TestCase) => {
+    if (!confirm(`"${c.id} ${c.name}" 케이스를 삭제하시겠습니까?\n케이스 관리 전체에서 삭제됩니다.`)) return;
+    deleteCase(c.id);
+    toast.success('케이스를 삭제했습니다');
+  };
+
+  const handleCaseSaved = async (caseId: string) => {
+    if (!selected) return;
+    if (!selected.case_ids.includes(caseId)) {
+      try {
+        const updated = await updateSuite(selected.id, { case_ids: [...selected.case_ids, caseId] });
+        setSuites((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+        setSelected(updated);
+      } catch {
+        // 추가 실패해도 케이스 저장은 이미 완료됨
+      }
     }
   };
 
@@ -258,31 +284,61 @@ export default function SuitePage() {
 
           {/* Cases */}
           <section>
-            <h3 className="mb-2 text-sm font-semibold">테스트 케이스 <span className="font-normal text-muted-foreground">({selected.case_ids.length}/{allCases.length})</span></h3>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">테스트 케이스 <span className="font-normal text-muted-foreground">({selected.case_ids.length}/{allCases.length})</span></h3>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-xs"
+                onClick={() => { setEditingCase(null); setCaseDialogOpen(true); }}
+              >
+                <Plus className="mr-1 size-3" /> 케이스 추가
+              </Button>
+            </div>
             {allCases.length === 0 ? (
-              <p className="text-xs text-muted-foreground">케이스가 없습니다</p>
+              <p className="text-xs text-muted-foreground">케이스가 없습니다. 위의 버튼으로 추가하세요.</p>
             ) : (
               <div className="flex flex-col gap-1">
                 {allCases.map((c) => {
                   const included = selected.case_ids.includes(c.id);
                   return (
-                    <button
+                    <div
                       key={c.id}
-                      onClick={() => toggleCase(c.id)}
                       className={cn(
-                        'flex items-center gap-2.5 rounded-xl border px-3 py-2 text-left text-xs transition-all',
+                        'group flex items-center gap-2.5 rounded-xl border px-3 py-2 text-xs transition-all',
                         included
                           ? 'border-primary/40 bg-primary/8 text-foreground'
                           : 'border-border bg-card text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
                       )}
                     >
-                      <span className={cn('flex size-4 shrink-0 items-center justify-center rounded border text-[10px]', included ? 'border-primary bg-primary text-primary-foreground' : 'border-border')}>
+                      {/* 체크박스 — 스위트 포함 여부 토글 */}
+                      <button
+                        onClick={() => toggleCase(c.id)}
+                        className={cn('flex size-4 shrink-0 items-center justify-center rounded border text-[10px] transition-colors', included ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:border-primary/50')}
+                      >
                         {included && <Check className="size-3" />}
-                      </span>
+                      </button>
                       <span className="font-mono font-medium">{c.id}</span>
-                      <span className="truncate">{c.name}</span>
-                      {c.method && <Badge variant="outline" className="ml-auto shrink-0 text-[10px]">{c.method}</Badge>}
-                    </button>
+                      <span className="flex-1 truncate">{c.name}</span>
+                      {c.method && <Badge variant="outline" className="shrink-0 text-[10px]">{c.method}</Badge>}
+                      {/* 수정/삭제 버튼 — hover 시 표시 */}
+                      <div className="ml-1 flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          onClick={() => { setEditingCase(c); setCaseDialogOpen(true); }}
+                          className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                          title="케이스 수정"
+                        >
+                          <Pencil className="size-3" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCase(c)}
+                          className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          title="케이스 삭제"
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -296,6 +352,13 @@ export default function SuitePage() {
           </section>
         </div>
       )}
+
+      <CaseFormDialog
+        open={caseDialogOpen}
+        onClose={() => { setCaseDialogOpen(false); setEditingCase(null); }}
+        editCase={editingCase}
+        onSaved={handleCaseSaved}
+      />
     </div>
   );
 }
