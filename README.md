@@ -100,139 +100,35 @@ PostgreSQL (9개 테이블)
 
 ---
 
-## ERD
+## 다이어그램
 
-```mermaid
-erDiagram
-    projects {
-        int id PK
-        varchar name
-        timestamp created_at
-        timestamp updated_at
-    }
-    qa_snapshots {
-        int id PK
-        int project_id FK
-        json data
-        timestamp updated_at
-    }
-    test_flows {
-        int id PK
-        int project_id FK
-        varchar name
-        json steps
-    }
-    test_runs {
-        int id PK
-        int project_id FK
-        varchar base_url
-        varchar status
-        int total
-        int done
-        int fail
-        varchar label
-        json case_results
-        json flow_results
-        json mgr_snapshot
-        timestamp started_at
-        timestamp finished_at
-    }
-    run_comments {
-        int id PK
-        int run_id FK
-        text text
-        timestamp created_at
-    }
-    notification_configs {
-        int id PK
-        int project_id FK
-        varchar name
-        varchar type
-        varchar webhook_url
-        boolean enabled
-        json events
-    }
-    case_histories {
-        int id PK
-        int project_id FK
-        varchar case_id
-        varchar action
-        json before
-        json after
-        timestamp changed_at
-    }
-    test_suites {
-        int id PK
-        int project_id FK
-        varchar name
-        json case_ids
-        json flow_ids
-        boolean is_default
-    }
-    deploy_histories {
-        int id PK
-        int project_id FK
-        varchar version
-        varchar environment
-        varchar deploy_type
-        int total_cases
-        int fail_cases
-        timestamp deployed_at
-    }
+### 전체 서비스 플로우
 
-    projects ||--o{ qa_snapshots         : "1:1"
-    projects ||--o{ test_flows           : "1:N"
-    projects ||--o{ test_runs            : "1:N"
-    projects ||--o{ notification_configs : "1:N"
-    projects ||--o{ case_histories       : "1:N"
-    projects ||--o{ test_suites          : "1:N"
-    projects ||--o{ deploy_histories     : "1:N"
-    test_runs ||--o{ run_comments        : "1:N"
-```
+![전체 플로우](docs/diagrams/1_전체플로우.png)
 
----
+### 자동 실행 시퀀스
 
-## 서비스 플로우
+![자동 실행 시퀀스](docs/diagrams/2_자동실행시퀀스.png)
 
-```mermaid
-flowchart TD
-    A([사용자]) --> DASH[전체 대시보드]
-    DASH -->|카드 클릭| B[프로젝트 진입]
-    B --> C{탭 선택}
+### 히스토리 복원 플로우
 
-    C --> SU[Test Suite]
-    C --> D[케이스 관리]
-    C --> E[자동 실행]
-    C --> F[실행 히스토리]
-    C --> AN[실행 분석]
-    C --> CH[변경 이력]
-    C --> G[테스트결과서]
-    C --> H[배포결과서]
-    C --> NT[알림 설정]
+![히스토리 복원](docs/diagrams/3_히스토리복원.png)
 
-    SU --> SU1[스위트 생성·편집]
-    SU --> SU2[케이스 직접 추가·수정·삭제]
-    SU --> SU3[케이스·플로우 체크박스 선택]
-    SU3 --> SU4[Additive Union 불러오기]
-    SU4 --> D
-    SU4 --> E
+### 테스트 플로우 Stop-on-fail
 
-    D --> D1[케이스 입력 / 엑셀 임포트]
-    D --> D2[Assertions 성공 판정 조건 설정]
-    D1 & D2 --> D3[저장 → 변경 이력 자동 기록]
+![stop-on-fail](docs/diagrams/4_플로우stop-on-fail.png)
 
-    E --> E1[케이스 + 플로우 선택]
-    E --> E2[전역·케이스별 URL·헤더 설정]
-    E1 & E2 --> E3[실행]
-    E3 --> E4[HTTP 요청 + Assertions 판정]
-    E4 --> E5[결과 불변 저장]
-    E5 --> E6[Discord·Slack 알림 전송]
+### 데이터 저장 흐름
 
-    NT --> NT1[Discord·Slack 웹훅 등록]
-    NT --> NT2[메시지 미리보기]
-```
+![데이터 저장 흐름](docs/diagrams/5_데이터저장흐름.png)
 
-자동 실행 시퀀스, 알림 플로우, 데이터 저장 흐름 등 상세 다이어그램 → [서비스 플로우 문서](docs/서비스플로우.md)
+### 케이스 변경 이력 플로우
+
+![변경 이력](docs/diagrams/6_변경이력플로우.png)
+
+### 알림 전송 플로우
+
+![알림 플로우](docs/diagrams/7_알림플로우.png)
 
 ---
 
