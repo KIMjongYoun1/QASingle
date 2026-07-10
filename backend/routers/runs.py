@@ -26,6 +26,17 @@ RUN_MAX_CONCURRENCY = int(os.getenv("RUN_MAX_CONCURRENCY", "3"))
 CASE_PARALLEL_WORKERS = int(os.getenv("CASE_PARALLEL_WORKERS", "10"))
 _run_executor = ThreadPoolExecutor(max_workers=RUN_MAX_CONCURRENCY, thread_name_prefix="qa-run")
 
+# 프로젝트별 스냅샷 read-modify-write를 직렬화하는 락 (병렬 케이스 실행 시 lost update 방지)
+_project_snapshot_locks: dict[int, threading.Lock] = {}
+_project_snapshot_locks_guard = threading.Lock()
+
+
+def _get_project_snapshot_lock(project_id: int) -> threading.Lock:
+    with _project_snapshot_locks_guard:
+        if project_id not in _project_snapshot_locks:
+            _project_snapshot_locks[project_id] = threading.Lock()
+        return _project_snapshot_locks[project_id]
+
 
 class RunCreateRequest(BaseModel):
     project_id: int
@@ -63,7 +74,10 @@ def create_run(req: RunCreateRequest, db: Session = Depends(get_db)):
             if not f:
                 continue
             sorted_steps = sorted(f.steps, key=lambda s: s["order"])
-            step_cases = [case_map[s["case_id"]] for s in sorted_steps if s["case_id"] in case_map and case_map[s["case_id"]].get("endpoint")]
+            step_cases = [
+                {**case_map[s["case_id"]], "extract_path": s.get("extract_path"), "extract_var": s.get("extract_var")}
+                for s in sorted_steps if s["case_id"] in case_map and case_map[s["case_id"]].get("endpoint")
+            ]
             if step_cases:
                 flows_data.append({"flow_id": f.id, "flow_name": f.name, "cases": step_cases})
 
@@ -224,20 +238,45 @@ def _eval_assertion(a: dict, resp) -> dict:
     return {'target': target, 'path': path, 'operator': operator, 'expected': expected, 'actual': str(actual_val), 'passed': passed}
 
 
-def _make_request(client: httpx.Client, case: dict, base_url: str) -> tuple[bool, str, str]:
-    """httpx로 단일 케이스 실행. (passed, actual_text, notes) 반환"""
+def _substitute_vars(text: str, variables: dict) -> str:
+    """{{변수명}} 패턴을 플로우 변수 저장소 값으로 치환 (포스트맨 {{var}} 문법과 동일)"""
+    if not text or not variables:
+        return text
+    def repl(m):
+        key = m.group(1).strip()
+        return str(variables[key]) if key in variables else m.group(0)
+    return re.sub(r"\{\{\s*([^}]+?)\s*\}\}", repl, text)
+
+
+def _extract_json_path(data, path: str):
+    """단순 JSON path 파서: 'a.b[0].c' 형태 지원"""
+    current = data
+    tokens = re.findall(r"[^.\[\]]+|\[\d+\]", path)
+    for tok in tokens:
+        if tok.startswith("["):
+            idx = int(tok[1:-1])
+            current = current[idx]
+        else:
+            current = current[tok]
+    return current
+
+
+def _make_request(client: httpx.Client, case: dict, base_url: str, variables: dict | None = None) -> tuple[bool, str, str, dict]:
+    """httpx로 단일 케이스 실행. (passed, actual_text, notes, extracted_vars) 반환"""
+    variables = variables or {}
     method = (case.get("method") or "GET").upper()
-    endpoint = re.sub(r"\{[^}]+\}", "1", case["endpoint"])
+    endpoint = re.sub(r"\{[^}]+\}", "1", _substitute_vars(case["endpoint"], variables))
     expected_status = case.get("expectedStatus") or 200
 
-    case_headers = {h["key"]: h["value"] for h in (case.get("headers") or []) if h.get("key")}
-    query_params = {q["key"]: q["value"] for q in (case.get("queryParams") or []) if q.get("key")}
+    case_headers = {h["key"]: _substitute_vars(h["value"], variables) for h in (case.get("headers") or []) if h.get("key")}
+    query_params = {q["key"]: _substitute_vars(q["value"], variables) for q in (case.get("queryParams") or []) if q.get("key")}
+    body_str = _substitute_vars(case.get("body") or "", variables)
     body_data = None
-    if case.get("body"):
+    if body_str:
         try:
-            body_data = json.loads(case["body"])
+            body_data = json.loads(body_str)
         except Exception:
-            body_data = case["body"]
+            body_data = body_str
 
     # 케이스별 baseUrl이 있으면 우선 사용, 없으면 전역 base_url fallback
     effective_base = (case.get("baseUrl") or base_url).rstrip("/")
@@ -277,7 +316,12 @@ def _make_request(client: httpx.Client, case: dict, base_url: str) -> tuple[bool
         # notes 구성
         op_labels = {'eq': '=', 'contains': '포함', 'not_contains': '미포함', 'exists': '존재', 'not_exists': '미존재', 'gt': '>', 'lt': '<'}
         target_labels = {'status_code': '상태코드', 'body_text': '바디 텍스트'}
-        notes_lines = [f"[Request] {request_line}", f"[Response {resp.status_code}] {body_snippet}"]
+        notes_lines = [f"[Request] {request_line}"]
+        if case_headers:
+            notes_lines.append(f"[Request Headers] {json.dumps(case_headers, ensure_ascii=False)}")
+        if body_data is not None:
+            notes_lines.append(f"[Request Body] {json.dumps(body_data, ensure_ascii=False) if isinstance(body_data, (dict, list)) else body_data}")
+        notes_lines.append(f"[Response {resp.status_code}] {body_snippet}")
         if assertion_results:
             notes_lines.append('[Assertions]')
             for r in assertion_results:
@@ -290,19 +334,40 @@ def _make_request(client: httpx.Client, case: dict, base_url: str) -> tuple[bool
                     notes_lines.append(f"  {icon} {t_label} {op_label} '{r['expected']}' → 실제: {r['actual']}")
         notes = '\n'.join(notes_lines)
 
+        # 응답값 추출 (플로우 스텝에 extract_path/extract_var가 설정된 경우)
+        extracted: dict = {}
+        extract_var = case.get("extract_var")
+        extract_path = case.get("extract_path")
+        if passed and extract_var and extract_path:
+            try:
+                value = _extract_json_path(resp.json(), extract_path)
+                extracted[extract_var] = value
+                notes += f"\n[Extract] {extract_path} → {{{{{extract_var}}}}} = {value}"
+            except Exception as e:
+                passed = False
+                actual_text = f"응답값 추출 실패: {extract_path} ({str(e)})"
+                notes += f"\n[Extract Error] {extract_path}: {str(e)}"
+
     except Exception as e:
         passed = False
         actual_text = f"요청 실패: {str(e)}"
-        notes = f"[Request] {request_line}\n[Error] {str(e)}"
+        notes_lines = [f"[Request] {request_line}"]
+        if case_headers:
+            notes_lines.append(f"[Request Headers] {json.dumps(case_headers, ensure_ascii=False)}")
+        if body_data is not None:
+            notes_lines.append(f"[Request Body] {json.dumps(body_data, ensure_ascii=False) if isinstance(body_data, (dict, list)) else body_data}")
+        notes_lines.append(f"[Error] {str(e)}")
+        notes = '\n'.join(notes_lines)
+        extracted = {}
 
-    return passed, actual_text, notes
+    return passed, actual_text, notes, extracted
 
 
 def _run_individual_case(case: dict, base_url: str, default_headers: dict,
                          project_id: int, run_id: int, lock: threading.Lock):
     """개별 케이스 병렬 실행 워커"""
     with httpx.Client(base_url=base_url.rstrip("/"), headers=default_headers, timeout=30) as client:
-        passed, actual_text, notes = _make_request(client, case, base_url)
+        passed, actual_text, notes, _ = _make_request(client, case, base_url)
 
     now_str = datetime.now().strftime("%Y-%m-%dT%H:%M")
     db = SessionLocal()
@@ -354,6 +419,7 @@ def _execute_run(run_id: int, project_id: int, base_url: str, default_headers: d
                         "steps": [],
                     }
                     stopped = False
+                    flow_vars: dict = {}
                     for case in flow["cases"]:
                         now_str = datetime.now().strftime("%Y-%m-%dT%H:%M")
                         if stopped:
@@ -371,7 +437,8 @@ def _execute_run(run_id: int, project_id: int, base_url: str, default_headers: d
                             flow_result["steps"].append({"case_id": case["id"], "pf": "N/A", "skipped": True})
                             continue
 
-                        passed, actual_text, notes = _make_request(client, case, base_url)
+                        passed, actual_text, notes, extracted = _make_request(client, case, base_url, flow_vars)
+                        flow_vars.update(extracted)
                         notes = f"[Flow: {flow['flow_name']}] {notes}"
 
                         db2 = SessionLocal()
@@ -496,31 +563,34 @@ def _dispatch_notification(project_id: int, run, event: str, db: Session, error:
 
 def _update_case_result(db: Session, project_id: int, case_id: str, actual_text: str,
                         passed: bool, now_str: str, notes: str = ""):
-    snap = db.query(models.QASnapshot).filter(models.QASnapshot.project_id == project_id).first()
-    if not snap:
-        return
-    data = copy.deepcopy(snap.data)
-    tst = data.get("tst", {"cover": {}, "cats": [], "cases": []})
-    tst_cases = list(tst.get("cases", []))
+    # 같은 프로젝트의 스냅샷을 여러 스레드가 동시에 read-modify-write 하면 나중에 쓴 쪽이
+    # 앞의 결과를 덮어쓰는 lost update가 발생하므로, 프로젝트 단위로 직렬화한다.
+    with _get_project_snapshot_lock(project_id):
+        snap = db.query(models.QASnapshot).filter(models.QASnapshot.project_id == project_id).first()
+        if not snap:
+            return
+        data = copy.deepcopy(snap.data)
+        tst = data.get("tst", {"cover": {}, "cats": [], "cases": []})
+        tst_cases = list(tst.get("cases", []))
 
-    mgr_case = next((c for c in data.get("mgr", {}).get("cases", []) if c["id"] == case_id), None)
-    cat_id = mgr_case.get("catId", "") if mgr_case else ""
+        mgr_case = next((c for c in data.get("mgr", {}).get("cases", []) if c["id"] == case_id), None)
+        cat_id = mgr_case.get("catId", "") if mgr_case else ""
 
-    found = False
-    for i, c in enumerate(tst_cases):
-        if c["id"] == case_id:
-            tst_cases[i] = {**c, "actual": actual_text, "pf": "Pass" if passed else "Fail",
-                            "owner": "자동실행", "date": now_str, "notes": notes}
-            found = True
-            break
-    if not found:
-        tst_cases.append({
-            "id": case_id, "catId": cat_id, "actual": actual_text,
-            "pf": "Pass" if passed else "Fail",
-            "owner": "자동실행", "date": now_str, "notes": notes, "evidence": [],
-        })
+        found = False
+        for i, c in enumerate(tst_cases):
+            if c["id"] == case_id:
+                tst_cases[i] = {**c, "actual": actual_text, "pf": "Pass" if passed else "Fail",
+                                "owner": "자동실행", "date": now_str, "notes": notes}
+                found = True
+                break
+        if not found:
+            tst_cases.append({
+                "id": case_id, "catId": cat_id, "actual": actual_text,
+                "pf": "Pass" if passed else "Fail",
+                "owner": "자동실행", "date": now_str, "notes": notes, "evidence": [],
+            })
 
-    tst["cases"] = tst_cases
-    data["tst"] = tst
-    snap.data = data
-    db.commit()
+        tst["cases"] = tst_cases
+        data["tst"] = tst
+        snap.data = data
+        db.commit()

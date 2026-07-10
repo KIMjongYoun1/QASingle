@@ -34,6 +34,7 @@ interface QAState {
   reorderCases: (fromIdx: number, toIdx: number) => Promise<void>;
   addCategory: (name: string) => void;
   deleteCategory: (id: string) => void;
+  updateCategory: (id: string, name: string) => void;
   updateExec: (mode: 'tst' | 'dep', id: string, field: string, value: string) => void;
   updateCover: (mode: 'tst' | 'dep', patch: Record<string, string>) => void;
   importCases: (cases: Partial<TestCase>[], categoryNames: string[]) => Promise<void>;
@@ -173,6 +174,16 @@ export const useQAStore = create<QAState>((set, get) => ({
           cats: state.data.mgr.cats.filter((c) => c.id !== id),
           cases: state.data.mgr.cases.map((c) => (c.catId === id ? { ...c, catId: '' } : c)),
         },
+      },
+    }));
+    get().syncCases();
+  },
+
+  updateCategory: (id, name) => {
+    set((state) => ({
+      data: {
+        ...state.data,
+        mgr: { ...state.data.mgr, cats: state.data.mgr.cats.map((c) => (c.id === id ? { ...c, name } : c)) },
       },
     }));
     get().syncCases();

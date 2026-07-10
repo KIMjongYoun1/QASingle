@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useQAStore } from '../store/useQAStore';
 import { listRuns, getRun, type RunSummary } from '../api/runs';
 import { listSuites, type TestSuite } from '../api/suites';
+import { listPresets, type ProjectPreset, type PresetKind } from '../api/presets';
 import type { Assertion, CaseType, KV, PF, TestCase } from '../types/qa';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -18,9 +19,27 @@ import {
 } from '../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { cn } from '../lib/utils';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 const STATUS_PRESETS = ['200', '201', '204', '400', '401', '403', '404', '409', '500'];
+
+const METHOD_COLOR: Record<string, string> = {
+  GET: 'bg-[#4f8cff]/15 text-[#4f8cff] border-[#4f8cff]/30',
+  POST: 'bg-[#16a34a]/15 text-[#16a34a] border-[#16a34a]/30',
+  PUT: 'bg-[#d97706]/15 text-[#d97706] border-[#d97706]/30',
+  PATCH: 'bg-[#d97706]/15 text-[#d97706] border-[#d97706]/30',
+  DELETE: 'bg-destructive/15 text-destructive border-destructive/30',
+};
+
+function bodyFieldCount(body?: string): number {
+  if (!body || !body.trim()) return 0;
+  try {
+    const obj = JSON.parse(body);
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) return Object.keys(obj).length;
+  } catch { /* not JSON */ }
+  return 0;
+}
 
 const ASSERTION_TARGETS: { value: Assertion['target']; label: string }[] = [
   { value: 'status_code', label: '상태코드' },
@@ -47,6 +66,33 @@ const emptyForm = {
 
 function buildInput(method: string, endpoint: string) {
   return [method, endpoint].filter(Boolean).join(' ');
+}
+
+function parseBodyValue(v: string): unknown {
+  try { return JSON.parse(v); } catch { return v; }
+}
+
+function serializeBodyFields(rows: KV[]): string {
+  if (rows.length === 0) return '';
+  const obj: Record<string, unknown> = {};
+  for (const r of rows) {
+    if (!r.key) continue;
+    obj[r.key] = parseBodyValue(r.value);
+  }
+  return JSON.stringify(obj, null, 2);
+}
+
+function parseBodyFields(bodyStr: string): KV[] {
+  if (!bodyStr || !bodyStr.trim()) return [];
+  try {
+    const obj = JSON.parse(bodyStr);
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      return Object.entries(obj).map(([key, value]) => ({
+        key, value: typeof value === 'string' ? value : JSON.stringify(value),
+      }));
+    }
+  } catch { /* not a flat JSON object — fall through */ }
+  return [];
 }
 
 function AssertionEditor({ rows, onChange }: { rows: Assertion[]; onChange: (rows: Assertion[]) => void }) {
@@ -109,14 +155,40 @@ function AssertionEditor({ rows, onChange }: { rows: Assertion[]; onChange: (row
   );
 }
 
-function KVEditor({ title, rows, onChange }: { title: string; rows: KV[]; onChange: (rows: KV[]) => void }) {
-  const update = (idx: number, patch: Partial<KV>) => onChange(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+function KVEditor({ title, rows, onChange, presets }: { title: string; rows: KV[]; onChange: (rows: KV[]) => void; presets?: ProjectPreset[] }) {
+  const update = (idx: number, patch: Partial<KV>) => {
+    if (patch.key != null && patch.key !== '' && rows.some((r, i) => i !== idx && r.key === patch.key)) {
+      toast.error(`이미 있는 키입니다: ${patch.key}`);
+      return;
+    }
+    onChange(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
   const remove = (idx: number) => onChange(rows.filter((_, i) => i !== idx));
   const add = () => onChange([...rows, { key: '', value: '' }]);
+  const addFromPreset = (p: ProjectPreset) => {
+    if (rows.some((r) => r.key === p.key)) {
+      toast.error(`이미 추가된 키입니다: ${p.key}`);
+      return;
+    }
+    onChange([...rows, { key: p.key || '', value: p.value }]);
+  };
   return (
     <div className="mb-2">
-      <div className="mb-1 flex items-center justify-between">
-        <label className="text-[11px] text-muted-foreground">{title}</label>
+      <label className="mb-1 block text-[11px] text-muted-foreground">{title}</label>
+      <div className="mb-1 flex flex-wrap items-center justify-end gap-1.5">
+        {presets && presets.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => {
+              const p = presets.find((x) => String(x.id) === e.target.value);
+              if (p) addFromPreset(p);
+            }}
+            className="h-6 min-w-0 flex-1 rounded border border-input bg-background px-1 text-[11px] text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="">저장된 값에서 추가</option>
+            {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        )}
         <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={add}>+ 추가</Button>
       </div>
       {rows.length === 0 ? (
@@ -146,16 +218,94 @@ export default function CaseManagerPage() {
   const clearAllCases = useQAStore((s) => s.clearAllCases);
   const addCategory = useQAStore((s) => s.addCategory);
   const deleteCategory = useQAStore((s) => s.deleteCategory);
+  const updateCategory = useQAStore((s) => s.updateCategory);
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editingCatName, setEditingCatName] = useState('');
 
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState<string | null>(null);
+  const [bodyFields, setBodyFields] = useState<KV[]>([]);
+  const [bodyRawText, setBodyRawText] = useState('');
+  const [presets, setPresets] = useState<ProjectPreset[]>([]);
+  useEffect(() => {
+    if (projectId) listPresets(projectId).then(setPresets).catch(() => setPresets([]));
+  }, [projectId]);
+  const presetsByKind = (kind: PresetKind) => presets.filter((p) => p.kind === kind);
   const [newCat, setNewCat] = useState('');
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterPF, setFilterPF] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [entryMode, setEntryModeRaw] = useState<'category' | 'manual'>('manual');
+  const setEntryMode = (mode: 'category' | 'manual') => {
+    if (mode === 'manual') setBodyRawText((prev) => prev || serializeBodyFields(bodyFields));
+    if (mode === 'category') setBodyFields((prev) => (prev.length > 0 ? prev : parseBodyFields(bodyRawText)));
+    setEntryModeRaw(mode);
+  };
+
+  // 직전에 카테고리 자동 적용으로 채워넣은 헤더/파라미터 key, baseUrl 자동 적용 여부를 기억해뒀다가
+  // 다른 카테고리로 바꾸면 그 전 카테고리가 넣어준 값만 지우고 새 카테고리 값으로 교체한다.
+  const lastAppliedRef = useRef<{ headerKeys: string[]; paramKeys: string[]; bodyKeys: string[]; baseUrlApplied: boolean }>({
+    headerKeys: [], paramKeys: [], bodyKeys: [], baseUrlApplied: false,
+  });
+
+  const applyCategory = (v: string) => {
+    const catId = !v || v === '__none' ? '' : v;
+    const catPresets = presets.filter((p) => p.category_id === catId);
+    if (catPresets.some((p) => p.kind === 'header' || p.kind === 'param' || p.kind === 'body')) setShowAdvanced(true);
+
+    const prevApplied = lastAppliedRef.current;
+    const headerPresets = catPresets.filter((p) => p.kind === 'header');
+    const paramPresets = catPresets.filter((p) => p.kind === 'param');
+    const bodyPresets = catPresets.filter((p) => p.kind === 'body');
+    const urlPreset = catPresets.find((p) => p.kind === 'url');
+
+    setForm((prev) => {
+      const headersWithoutPrevAuto = prev.headers.filter((h) => !prevApplied.headerKeys.includes(h.key));
+      const paramsWithoutPrevAuto = prev.queryParams.filter((q) => !prevApplied.paramKeys.includes(q.key));
+      const headerAdds = headerPresets
+        .filter((p) => !headersWithoutPrevAuto.some((h) => h.key === p.key))
+        .map((p) => ({ key: p.key || '', value: p.value }));
+      const paramAdds = paramPresets
+        .filter((p) => !paramsWithoutPrevAuto.some((q) => q.key === p.key))
+        .map((p) => ({ key: p.key || '', value: p.value }));
+      const baseUrlWasAuto = prevApplied.baseUrlApplied;
+      const nextBaseUrl = (prev.baseUrl === '' || baseUrlWasAuto)
+        ? (urlPreset ? urlPreset.value : '')
+        : prev.baseUrl;
+
+      return {
+        ...prev,
+        catId,
+        headers: [...headersWithoutPrevAuto, ...headerAdds],
+        queryParams: [...paramsWithoutPrevAuto, ...paramAdds],
+        baseUrl: nextBaseUrl,
+      };
+    });
+
+    setBodyFields((prev) => {
+      const withoutPrevAuto = prev.filter((b) => !prevApplied.bodyKeys.includes(b.key));
+      const bodyAdds = bodyPresets
+        .filter((p) => !withoutPrevAuto.some((b) => b.key === p.key))
+        .map((p) => ({ key: p.key || '', value: p.value }));
+      return [...withoutPrevAuto, ...bodyAdds];
+    });
+
+    lastAppliedRef.current = {
+      headerKeys: headerPresets.map((p) => p.key || ''),
+      paramKeys: paramPresets.map((p) => p.key || ''),
+      bodyKeys: bodyPresets.map((p) => p.key || ''),
+      baseUrlApplied: !!urlPreset,
+    };
+  };
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => setExpandedIds((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
   const [loadedSuites, setLoadedSuites] = useState<{ id: number; name: string; caseIds: string[] }[]>([]);
   const [loadedHistories, setLoadedHistories] = useState<{ runId: number; label: string; caseIds: string[] }[]>([]);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -236,22 +386,30 @@ export default function CaseManagerPage() {
       ...form,
       input: buildInput(form.method, form.endpoint),
       expectedStatus: form.expectedStatus ? Number(form.expectedStatus) : undefined,
+      body: entryMode === 'manual' ? bodyRawText : serializeBodyFields(bodyFields),
     };
     if (editId) {
       updateCase(editId, { ...payload, id: editId });
       setEditId(null);
       setForm(emptyForm);
+      setBodyFields([]);
+      setBodyRawText('');
       toast.success('케이스를 수정했습니다');
     } else {
       const c: TestCase = { ...payload, id: form.id || nextId() };
       addCase(c);
       setForm(emptyForm);
+      setBodyFields([]);
+      setBodyRawText('');
       toast.success('케이스를 추가했습니다');
     }
   };
 
   const startEdit = (c: TestCase) => {
     setEditId(c.id);
+    setBodyFields(parseBodyFields(c.body || ''));
+    setBodyRawText(c.body || '');
+    setEntryMode(c.catId ? 'category' : 'manual');
     setForm({
       ...emptyForm,
       ...c,
@@ -266,7 +424,7 @@ export default function CaseManagerPage() {
     });
     setShowAdvanced(!!(c.baseUrl || c.headers?.length || c.queryParams?.length || c.body || c.assertions?.length));
   };
-  const cancelEdit = () => { setEditId(null); setForm(emptyForm); setShowAdvanced(false); };
+  const cancelEdit = () => { setEditId(null); setForm(emptyForm); setBodyFields([]); setBodyRawText(''); setShowAdvanced(false); };
 
   const allLoadedIds: Set<string> | null = (() => {
     const all = [
@@ -289,6 +447,51 @@ export default function CaseManagerPage() {
       <div className="flex flex-col gap-5 overflow-y-auto border-r border-border bg-card p-3.5">
         <div>
           <div className="mb-2.5 text-xs font-semibold text-warning">📝 케이스 {editId ? '수정' : '추가'}</div>
+
+          {/* 시작 방식 선택 */}
+          <div className="mb-2.5 rounded-md border border-border bg-muted/30 p-2">
+            <div className="mb-1.5 flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => setEntryMode('category')}
+                className={cn(
+                  'flex-1 rounded-lg border py-1.5 text-xs font-medium transition-all',
+                  entryMode === 'category' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-secondary/60'
+                )}
+              >
+                카테고리로 선택하기
+              </button>
+              <button
+                type="button"
+                onClick={() => setEntryMode('manual')}
+                className={cn(
+                  'flex-1 rounded-lg border py-1.5 text-xs font-medium transition-all',
+                  entryMode === 'manual' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-secondary/60'
+                )}
+              >
+                직접입력
+              </button>
+            </div>
+            {entryMode === 'category' && (
+              <>
+                <label className="mb-1 block text-[11px] text-muted-foreground">
+                  카테고리를 고르면 그 카테고리에 등록된 헤더 · 파라미터 · 서버주소가 자동으로 채워집니다
+                </label>
+                <Select
+                  value={form.catId || '__none'}
+                  onValueChange={applyCategory}
+                  items={[{ value: '__none', label: '-- 카테고리 선택 --' }, ...cats.map((c) => ({ value: c.id, label: c.name }))]}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">-- 카테고리 선택 --</SelectItem>
+                    {cats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+          </div>
+
           <div className="mb-2 grid grid-cols-2 gap-1.5">
             <div>
               <label className="mb-1 block text-[11px] text-muted-foreground">케이스 ID</label>
@@ -296,7 +499,11 @@ export default function CaseManagerPage() {
             </div>
             <div>
               <label className="mb-1 block text-[11px] text-muted-foreground">유형 — 정상/비정상 케이스</label>
-              <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v as CaseType })}>
+              <Select
+                value={form.type}
+                onValueChange={(v) => setForm({ ...form, type: v as CaseType })}
+                items={[{ value: 'Positive', label: 'Positive' }, { value: 'Negative', label: 'Negative' }]}
+              >
                 <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Positive">Positive</SelectItem>
@@ -310,44 +517,64 @@ export default function CaseManagerPage() {
             <Textarea rows={2} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="text-xs" />
           </div>
           <div className="mb-2 rounded-md border border-border bg-muted/30 p-2">
-            <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">API 요청 설정 — 실제 호출에 사용되는 정보</div>
+            <div className="mb-1.5 -mx-2 -mt-2 rounded-t-md border-b-2 border-primary/40 bg-primary/10 px-2.5 py-1.5 text-[11px] font-semibold text-foreground">API 요청 설정 — 실제 호출에 사용되는 정보</div>
             <div className="mb-1.5">
-              <Input
-                placeholder="서버 주소 (비워두면 전역 설정 사용)"
+              <label className="mb-0.5 block text-[10px] text-muted-foreground">서버 주소 — 비워두면 전역 설정 사용, 저장된 값이 있으면 입력 중 목록에 표시됨</label>
+              <input
+                list="baseUrlPresets"
+                placeholder="예: http://localhost:8090"
                 value={form.baseUrl}
                 onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-                className="h-8 font-mono text-xs"
+                className="h-8 w-full rounded-md border border-input bg-background px-2.5 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
               />
+              <datalist id="baseUrlPresets">
+                {presetsByKind('url').map((p) => <option key={p.id} value={p.value}>{p.label}</option>)}
+              </datalist>
+            </div>
+
+            <div className="mb-0.5 grid grid-cols-[88px_1fr] gap-1.5">
+              <label className="block text-[10px] text-muted-foreground">메서드</label>
+              <label className="block text-[10px] text-muted-foreground">엔드포인트 경로 — 예: /users/{'{id}'}</label>
             </div>
             <div className="mb-1.5 grid grid-cols-[88px_1fr] gap-1.5">
-              <Select value={form.method || '__none'} onValueChange={(v) => setForm({ ...form, method: !v || v === '__none' ? '' : v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Method" /></SelectTrigger>
+              <Select
+                value={form.method || '__none'}
+                onValueChange={(v) => setForm({ ...form, method: !v || v === '__none' ? '' : v })}
+                items={[{ value: '__none', label: '-- Method --' }, ...METHODS.map((m) => ({ value: m, label: m }))]}
+              >
+                <SelectTrigger className="h-8 w-full text-xs"><SelectValue placeholder="Method" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none">-- Method --</SelectItem>
                   {METHODS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Input
-                placeholder="/users/{id}"
-                value={form.endpoint}
-                onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
-                className="h-8 font-mono text-xs"
-              />
+              <div className="min-w-0">
+                <Input
+                  list="endpointPathPresets"
+                  placeholder="/users/{id}"
+                  value={form.endpoint}
+                  onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
+                  className="h-8 font-mono text-xs"
+                />
+                <datalist id="endpointPathPresets">
+                  {presetsByKind('path').map((p) => <option key={p.id} value={p.value}>{p.label}</option>)}
+                </datalist>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              <Select value={form.expectedStatus || '__none'} onValueChange={(v) => setForm({ ...form, expectedStatus: !v || v === '__none' ? '' : v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="기대 상태코드" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none">-- 성공 상태코드 선택 --</SelectItem>
-                  {STATUS_PRESETS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Input
-                placeholder="직접 입력 (선택)"
-                value={STATUS_PRESETS.includes(form.expectedStatus) ? '' : form.expectedStatus}
+
+            <div>
+              <label className="mb-0.5 block text-[10px] text-muted-foreground">성공 상태코드 — 목록에서 고르거나 직접 숫자 입력</label>
+              <input
+                list="expectedStatusPresets"
+                inputMode="numeric"
+                placeholder="예: 200"
+                value={form.expectedStatus}
                 onChange={(e) => setForm({ ...form, expectedStatus: e.target.value.replace(/\D/g, '') })}
-                className="h-8 text-xs"
+                className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
               />
+              <datalist id="expectedStatusPresets">
+                {STATUS_PRESETS.map((s) => <option key={s} value={s} />)}
+              </datalist>
             </div>
             {(form.method || form.endpoint) && (
               <div className="mt-1.5 font-mono text-[11px] text-primary">
@@ -357,44 +584,48 @@ export default function CaseManagerPage() {
               </div>
             )}
 
-            <div className="mt-2.5 border-t border-border pt-2">
+            <div className="mt-3 border-t-2 border-primary/40 pt-2">
               <button
                 type="button"
                 onClick={() => setShowAdvanced((v) => !v)}
-                className="flex w-full items-center justify-between text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                className="flex w-full items-center justify-between rounded-md bg-primary/10 px-2.5 py-1.5 text-[11px] font-semibold text-foreground hover:bg-primary/15"
               >
                 <span>요청 세부 설정 — 헤더 · 파라미터 · 전송 데이터 · 성공 조건</span>
-                <span>{showAdvanced ? '▲' : '▼'}</span>
+                {showAdvanced ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
               </button>
               {showAdvanced && (
-                <div className="mt-2">
-                  <KVEditor title="요청 헤더 — 인증 토큰 등 추가 정보" rows={form.headers} onChange={(rows) => setForm({ ...form, headers: rows })} />
-                  <KVEditor title="URL 파라미터 — ?key=value 형태로 붙는 값" rows={form.queryParams} onChange={(rows) => setForm({ ...form, queryParams: rows })} />
-                  <div className="mb-2">
-                    <label className="mb-1 block text-[11px] text-muted-foreground">요청 바디 — API에 전송할 데이터 (JSON 형식)</label>
-                    <Textarea
-                      rows={3}
-                      placeholder={'{\n  "key": "value"\n}'}
-                      value={form.body}
-                      onChange={(e) => setForm({ ...form, body: e.target.value })}
-                      className="font-mono text-xs"
-                    />
-                  </div>
+                <div className="mt-2 rounded-md border-l-2 border-primary/40 bg-background/60 pl-2.5 py-1">
+                  <KVEditor title="요청 헤더 — 인증 토큰 등 추가 정보" rows={form.headers} onChange={(rows) => setForm({ ...form, headers: rows })} presets={presetsByKind('header')} />
+                  <KVEditor title="URL 파라미터 — ?key=value 형태로 붙는 값" rows={form.queryParams} onChange={(rows) => setForm({ ...form, queryParams: rows })} presets={presetsByKind('param')} />
+                  {entryMode === 'category' ? (
+                    <KVEditor title="요청 바디 — API에 전송할 JSON 필드" rows={bodyFields} onChange={setBodyFields} presets={presetsByKind('body')} />
+                  ) : (
+                    <div className="mb-2">
+                      <label className="mb-1 block text-[11px] text-muted-foreground">요청 바디 — JSON 직접 입력</label>
+                      <Textarea
+                        rows={4}
+                        placeholder={'{\n  "key": "value"\n}'}
+                        value={bodyRawText}
+                        onChange={(e) => setBodyRawText(e.target.value)}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  )}
                   <AssertionEditor rows={form.assertions} onChange={(rows) => setForm({ ...form, assertions: rows })} />
                 </div>
               )}
             </div>
           </div>
           <div className="mb-2">
-            <label className="mb-1 block text-[11px] text-muted-foreground">기대 결과 — 이 케이스에서 예상되는 동작</label>
+            <label className="mb-1 block rounded-md border-b-2 border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-foreground">기대 결과 — 이 케이스에서 예상되는 동작</label>
             <Textarea rows={2} value={form.expected} onChange={(e) => setForm({ ...form, expected: e.target.value })} className="text-xs" />
           </div>
           <div className="mb-2">
-            <label className="mb-1 block text-[11px] text-muted-foreground">실행 결과 — 자동 실행 후 자동으로 채워짐</label>
+            <label className="mb-1 block rounded-md border-b-2 border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-foreground">실행 결과 — 자동 실행 후 자동으로 채워짐</label>
             <Textarea rows={2} value={form.actual} onChange={(e) => setForm({ ...form, actual: e.target.value })} className="text-xs" />
           </div>
           <div className="mb-2">
-            <label className="mb-1 block text-[11px] text-muted-foreground">수동 판정 — 직접 결과를 기록할 때 사용</label>
+            <label className="mb-1 block rounded-md border-b-2 border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-foreground">수동 판정 — 직접 결과를 기록할 때 사용</label>
             <div className="flex gap-1">
               {(['Pass', 'Fail', 'N/A'] as PF[]).map((pfv) => {
                 const active = form.pf === pfv;
@@ -418,8 +649,12 @@ export default function CaseManagerPage() {
             </div>
           </div>
           <div className="mb-2">
-            <label className="mb-1 block text-[11px] text-muted-foreground">카테고리</label>
-            <Select value={form.catId || '__none'} onValueChange={(v) => setForm({ ...form, catId: !v || v === '__none' ? '' : v })}>
+            <label className="mb-1 block rounded-md border-b-2 border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-foreground">카테고리</label>
+            <Select
+              value={form.catId || '__none'}
+              onValueChange={applyCategory}
+              items={[{ value: '__none', label: '-- 미분류 --' }, ...cats.map((c) => ({ value: c.id, label: c.name }))]}
+            >
               <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none">-- 미분류 --</SelectItem>
@@ -429,11 +664,11 @@ export default function CaseManagerPage() {
           </div>
           <div className="mb-2 grid grid-cols-2 gap-1.5">
             <div>
-              <label className="mb-1 block text-[11px] text-muted-foreground">담당자</label>
+              <label className="mb-1 block rounded-md border-b-2 border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-foreground">담당자</label>
               <Input value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })} className="h-8 text-xs" />
             </div>
             <div>
-              <label className="mb-1 block text-[11px] text-muted-foreground">수행일자</label>
+              <label className="mb-1 block rounded-md border-b-2 border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-foreground">수행일자</label>
               <Input type="datetime-local" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="h-8 text-xs" />
             </div>
           </div>
@@ -448,9 +683,41 @@ export default function CaseManagerPage() {
           <div className="mb-2 flex flex-col gap-1.5">
             {cats.map((c) => (
               <div key={c.id} className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1.5">
-                <div className="size-2 rounded-sm" style={{ background: c.color }} />
-                <span className="flex-1 text-xs">{c.name}</span>
-                <Button size="sm" variant="ghost" className="h-6 px-2 text-destructive" onClick={() => { deleteCategory(c.id); toast.success('카테고리를 삭제했습니다'); }}>✕</Button>
+                <div className="size-2 shrink-0 rounded-sm" style={{ background: c.color }} />
+                {editingCatId === c.id ? (
+                  <>
+                    <Input
+                      autoFocus
+                      value={editingCatName}
+                      onChange={(e) => setEditingCatName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && editingCatName.trim()) {
+                          updateCategory(c.id, editingCatName.trim());
+                          setEditingCatId(null);
+                          toast.success('카테고리를 수정했습니다');
+                        }
+                        if (e.key === 'Escape') setEditingCatId(null);
+                      }}
+                      className="h-6 flex-1 text-xs"
+                    />
+                    <Button
+                      size="sm" variant="ghost" className="h-6 px-2"
+                      onClick={() => {
+                        if (!editingCatName.trim()) return;
+                        updateCategory(c.id, editingCatName.trim());
+                        setEditingCatId(null);
+                        toast.success('카테고리를 수정했습니다');
+                      }}
+                    >✔</Button>
+                    <Button size="sm" variant="ghost" className="h-6 px-2 text-muted-foreground" onClick={() => setEditingCatId(null)}>✕</Button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-xs">{c.name}</span>
+                    <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => { setEditingCatId(c.id); setEditingCatName(c.name); }}>✎</Button>
+                    <Button size="sm" variant="ghost" className="h-6 px-2 text-destructive" onClick={() => { deleteCategory(c.id); toast.success('카테고리를 삭제했습니다'); }}>✕</Button>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -493,7 +760,11 @@ export default function CaseManagerPage() {
 
         <div className="mb-3.5 flex flex-wrap items-center gap-2">
           <Input placeholder="🔍 ID 또는 항목명 검색" value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 w-52 text-xs" />
-          <Select value={filterType || '__all'} onValueChange={(v) => setFilterType(!v || v === '__all' ? '' : v)}>
+          <Select
+            value={filterType || '__all'}
+            onValueChange={(v) => setFilterType(!v || v === '__all' ? '' : v)}
+            items={[{ value: '__all', label: '전체 구분' }, { value: 'Positive', label: 'Positive' }, { value: 'Negative', label: 'Negative' }]}
+          >
             <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__all">전체 구분</SelectItem>
@@ -501,7 +772,11 @@ export default function CaseManagerPage() {
               <SelectItem value="Negative">Negative</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={filterPF || '__all'} onValueChange={(v) => setFilterPF(!v || v === '__all' ? '' : v)}>
+          <Select
+            value={filterPF || '__all'}
+            onValueChange={(v) => setFilterPF(!v || v === '__all' ? '' : v)}
+            items={[{ value: '__all', label: '전체 P/F' }, { value: 'Pass', label: 'Pass' }, { value: 'Fail', label: 'Fail' }, { value: 'N/A', label: 'N/A' }]}
+          >
             <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="__all">전체 P/F</SelectItem>
@@ -665,19 +940,24 @@ export default function CaseManagerPage() {
                   />
                 </TableHead>
                 <TableHead>ID</TableHead><TableHead>테스트 항목명</TableHead><TableHead>구분</TableHead><TableHead>카테고리</TableHead>
-                <TableHead>입력값</TableHead><TableHead>기대 결과</TableHead><TableHead>실제 결과</TableHead><TableHead>P/F</TableHead>
-                <TableHead>담당자</TableHead><TableHead>수행일자</TableHead><TableHead></TableHead>
+                <TableHead>요청</TableHead><TableHead>설정값</TableHead><TableHead>P/F</TableHead><TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={12} className="py-11 text-center text-muted-foreground">📋 테스트 케이스를 추가해주세요</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="py-11 text-center text-muted-foreground">📋 테스트 케이스를 추가해주세요</TableCell></TableRow>
               )}
               {filtered.map((c) => {
                 const cat = cats.find((x) => x.id === c.catId);
                 const checked = checkedIds.has(c.id);
+                const expanded = expandedIds.has(c.id);
+                const headerCount = c.headers?.length || 0;
+                const paramCount = c.queryParams?.length || 0;
+                const bodyCount = bodyFieldCount(c.body);
+                const assertionCount = c.assertions?.length || 0;
                 return (
-                  <TableRow key={c.id} className={checked ? 'bg-primary/5' : undefined}>
+                  <Fragment key={c.id}>
+                  <TableRow className={checked ? 'bg-primary/5' : undefined}>
                     <TableCell>
                       <input
                         type="checkbox"
@@ -700,16 +980,34 @@ export default function CaseManagerPage() {
                     <TableCell>
                       {cat ? <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-sm" style={{ background: cat.color }} />{cat.name}</span> : '-'}
                     </TableCell>
-                    <TableCell>{c.input || '-'}</TableCell>
-                    <TableCell>{c.expected || '-'}</TableCell>
-                    <TableCell>{c.actual || '-'}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {c.method && (
+                          <span className={cn('rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold', METHOD_COLOR[c.method] || 'bg-muted text-muted-foreground border-border')}>
+                            {c.method}
+                          </span>
+                        )}
+                        <span className="font-mono text-xs">{c.endpoint || c.input || '-'}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        onClick={() => toggleExpanded(c.id)}
+                        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                        title="요청 상세 보기"
+                      >
+                        <span className="rounded bg-secondary px-1.5 py-0.5">헤더 {headerCount}</span>
+                        <span className="rounded bg-secondary px-1.5 py-0.5">파라미터 {paramCount}</span>
+                        <span className="rounded bg-secondary px-1.5 py-0.5">바디 {bodyCount}</span>
+                        <span className="rounded bg-secondary px-1.5 py-0.5">조건 {assertionCount}</span>
+                        {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                      </button>
+                    </TableCell>
                     <TableCell>
                       <Badge className={cn('border-transparent font-bold', c.pf === 'Pass' ? 'bg-success text-success-foreground' : c.pf === 'Fail' ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-muted-foreground')}>
                         {c.pf}
                       </Badge>
                     </TableCell>
-                    <TableCell>{c.owner || '-'}</TableCell>
-                    <TableCell>{c.date || '-'}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button size="sm" className="h-7 bg-warning px-2 text-warning-foreground hover:bg-warning/90" onClick={() => startEdit(c)}>수정</Button>
@@ -717,6 +1015,61 @@ export default function CaseManagerPage() {
                       </div>
                     </TableCell>
                   </TableRow>
+                  {expanded && (
+                    <TableRow key={`${c.id}-detail`}>
+                      <TableCell colSpan={9} className="bg-muted/20">
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-2 p-2 text-xs">
+                          <div>
+                            <div className="mb-1 font-semibold text-muted-foreground">서버 주소</div>
+                            <div className="font-mono">{c.baseUrl || '[전역 URL]'}</div>
+                          </div>
+                          <div>
+                            <div className="mb-1 font-semibold text-muted-foreground">성공 상태코드</div>
+                            <div className="font-mono">{c.expectedStatus ?? '-'}</div>
+                          </div>
+                          <div>
+                            <div className="mb-1 font-semibold text-muted-foreground">헤더</div>
+                            {c.headers?.length ? c.headers.map((h, i) => (
+                              <div key={i} className="font-mono"><span className="font-bold text-foreground">{h.key}</span> <span className="text-muted-foreground">=</span> {h.value}</div>
+                            )) : <div className="text-muted-foreground">없음</div>}
+                          </div>
+                          <div>
+                            <div className="mb-1 font-semibold text-muted-foreground">URL 파라미터</div>
+                            {c.queryParams?.length ? c.queryParams.map((q, i) => (
+                              <div key={i} className="font-mono"><span className="font-bold text-foreground">{q.key}</span> <span className="text-muted-foreground">=</span> {q.value}</div>
+                            )) : <div className="text-muted-foreground">없음</div>}
+                          </div>
+                          <div className="col-span-2">
+                            <div className="mb-1 font-semibold text-muted-foreground">요청 바디</div>
+                            {c.body ? (
+                              parseBodyFields(c.body).length > 0 ? (
+                                parseBodyFields(c.body).map((b, i) => (
+                                  <div key={i} className="font-mono"><span className="font-bold text-foreground">{b.key}</span> <span className="text-muted-foreground">=</span> {b.value}</div>
+                                ))
+                              ) : (
+                                <pre className="whitespace-pre-wrap font-mono">{c.body}</pre>
+                              )
+                            ) : <div className="text-muted-foreground">없음</div>}
+                          </div>
+                          <div className="col-span-2">
+                            <div className="mb-1 font-semibold text-muted-foreground">성공 판정 조건</div>
+                            {c.assertions?.length ? c.assertions.map((a, i) => (
+                              <div key={i} className="font-mono">{a.target} {a.operator} {a.value ?? ''}</div>
+                            )) : <div className="text-muted-foreground">없음 — 상태코드 일치 여부로만 판정</div>}
+                          </div>
+                          <div>
+                            <div className="mb-1 font-semibold text-muted-foreground">기대 결과 / 실제 결과</div>
+                            <div>{c.expected || '-'} / {c.actual || '-'}</div>
+                          </div>
+                          <div>
+                            <div className="mb-1 font-semibold text-muted-foreground">담당자 / 수행일자</div>
+                            <div>{c.owner || '-'} / {c.date || '-'}</div>
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </Fragment>
                 );
               })}
             </TableBody>

@@ -113,6 +113,8 @@ export interface Project {
 export interface FlowStep {
   case_id: string;
   order: number;
+  extract_path?: string | null;  // 응답에서 값을 뽑을 JSON path (예: data.cards[0].cardId)
+  extract_var?: string | null;   // 추출한 값을 저장할 변수명 (이후 스텝에서 {{변수명}}으로 참조)
 }
 
 export interface TestFlow {

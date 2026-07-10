@@ -141,7 +141,11 @@ export default function ExcelImportModal({ onClose, onImported }: Props) {
   const colSelect = (label: string, value: string, onChange: (v: string) => void, required?: boolean) => (
     <div>
       <label className="mb-1 block text-[11px] text-muted-foreground">{label}{required && ' *'}</label>
-      <Select value={value || NONE} onValueChange={(v) => onChange(!v || v === NONE ? '' : v)}>
+      <Select
+        value={value || NONE}
+        onValueChange={(v) => onChange(!v || v === NONE ? '' : v)}
+        items={[{ value: NONE, label: '선택 안 함' }, ...headers.map((h) => ({ value: h, label: h }))]}
+      >
         <SelectTrigger className="h-8 w-full text-xs"><SelectValue placeholder="선택 안 함" /></SelectTrigger>
         <SelectContent>
           <SelectItem value={NONE}>선택 안 함</SelectItem>
@@ -174,7 +178,11 @@ export default function ExcelImportModal({ onClose, onImported }: Props) {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="mb-1 block text-[11px] text-muted-foreground">시트 선택</label>
-                <Select value={sheetName} onValueChange={(v) => setSheetName(v || '')}>
+                <Select
+                  value={sheetName}
+                  onValueChange={(v) => setSheetName(v || '')}
+                  items={sheets.map((s) => ({ value: s, label: s }))}
+                >
                   <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {sheets.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}

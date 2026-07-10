@@ -32,12 +32,17 @@
 - **Additive 불러오기** — 여러 스위트·히스토리를 합산(union) 조합, 칩 단위 해제 가능
 
 ### 📋 케이스 관리
-- 카테고리 단위로 테스트 케이스 구조화 관리
+- 카테고리 단위로 테스트 케이스 구조화 관리 (추가·수정·삭제, 카테고리 이름 변경 포함)
 - **Postman 표준 방식**으로 케이스별 실행 파라미터 입력 (Base URL / Method / Endpoint / Headers / Query Params / Body)
 - 케이스별 Base URL 개별 지정 가능 — 비워두면 전역 URL 자동 fallback
 - **성공 판정 조건(Assertions)** 설정 — 상태코드 · Body JSON 경로 · Body 텍스트 · 헤더를 조건으로 Pass/Fail 자동 판정
 - 연동규격서 **엑셀 임포트** 지원
 - 스위트·히스토리 **복수 소스 additive 불러오기** — 합산(union) 필터, 칩 단위 개별 해제
+- **저장된 값(프리셋) 관리** — 자주 쓰는 헤더 · URL · 엔드포인트 경로 · 파라미터 · 바디 필드를 프로젝트 단위로 등록해두고 케이스 편집 시 드롭다운으로 재사용. 프리셋을 카테고리에 연결해두면 케이스 작성 시 "카테고리로 선택하기" 탭에서 카테고리만 골라도 해당 헤더/파라미터/바디/URL이 자동 적용됨 (다른 카테고리로 바꾸면 이전 자동 적용분만 깔끔히 교체)
+- 케이스 편집 폼은 "카테고리로 선택하기"(자동 적용) / "직접입력"(수동, 바디는 raw JSON 직접 편집) 두 모드로 시작 가능
+- 헤더 · 파라미터 · 바디 편집 시 **중복 키 등록 방지**
+- 저장 전 실제로 호출될 요청 전체(메서드·URL·헤더·바디)를 미리보기로 확인 후 저장
+- 케이스 목록 테이블에 요청 Method 배지 + 설정값 요약(헤더/파라미터/바디/조건 개수)을 표시, 클릭하면 전체 설정값이 펼쳐짐
 
 ### ⚡ 자동 실행
 - 개별 케이스 + **테스트 플로우** 선택 후 실제 HTTP 요청 자동 실행
@@ -60,11 +65,13 @@
 - 업무 흐름 단위로 케이스를 순서대로 묶은 플로우 정의
 - **Stop-on-fail** — 스텝 실패 시 이후 스텝 자동 스킵
 - 플로우 단위 성공/실패 결과 별도 기록
+- **응답값 추출·변수 체이닝** (포스트맨 스타일) — 스텝별로 JSON path를 지정해 응답값을 변수로 추출, 이후 스텝의 헤더/파라미터/바디에서 `{{변수명}}`으로 참조. 로그인 → 토큰 추출 → 이후 스텝 인증 헤더에 자동 대입 같은 시나리오에 사용. 변수는 플로우 실행 중에만 유효 (실행 결과와 별도로 영속 저장하지 않음)
 
 ### 📊 실행 히스토리
 - 모든 자동 실행 이력 시계열 보관
 - Pass / Fail 필터 + **카테고리 필터** 동시 지원
 - 케이스 행 클릭 시 actual / notes 인라인 확인
+- notes에 **요청(헤더·바디 포함)과 응답을 모두 기록** — `[Request]` `[Request Headers]` `[Request Body]` `[Response]` 순으로 남아 실패 원인을 요청값부터 추적 가능
 - 실행 단위 **댓글** 추가 (추가 전용, 감사 목적)
 - 히스토리 설정 → 케이스관리 / 자동실행 **양방향 복원**
 
@@ -94,13 +101,14 @@ FastAPI REST API
   ├── /api/analytics       실행 분석 (기간 필터)
   ├── /api/notifications   Discord / Slack 웹훅 설정
   ├── /api/deploy          배포결과서 이력
+  ├── /api/presets         저장된 값(헤더·URL·경로·파라미터·바디) CRUD, 카테고리 연결
   └── /api/analysis        LLM 분석 (Local Ollama | Claude API — 요청 시 프로바이더 선택)
         │
         ▼
-PostgreSQL (9개 테이블)
+PostgreSQL (10개 테이블)
   projects · qa_snapshots · test_flows · test_runs
   run_comments · case_histories · test_suites
-  notification_configs · deploy_histories
+  notification_configs · deploy_histories · project_presets
 ```
 
 ---
@@ -238,6 +246,12 @@ alembic upgrade head
 
 > `alembic.ini`의 `sqlalchemy.url` 기본값이 로컬 개발 DB로 설정되어 있습니다.  
 > 운영 환경에서는 `DATABASE_URL` 환경변수를 설정하면 자동으로 우선 적용됩니다.
+
+> **참고**: 실제로는 앱 시작 시 `models.Base.metadata.create_all()`이 먼저 신규 테이블/컬럼을
+> 만들기 때문에, 개발 중 스키마를 바꾼 뒤 Alembic 마이그레이션 파일을 새로 작성하고 나면
+> (그 변경이 이미 DB에 반영돼 있으므로) `alembic upgrade head` 대신
+> `alembic stamp head` 로 버전 포인터만 맞춰줍니다. 신규 환경에 처음부터 배포할 때는
+> `alembic upgrade head`로 순차 적용하면 됩니다.
 
 ---
 

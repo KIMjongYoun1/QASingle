@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from typing import Optional
 from database import get_db
 import models
 
@@ -10,6 +11,8 @@ router = APIRouter(prefix="/api/flows", tags=["flows"])
 class FlowStep(BaseModel):
     case_id: str
     order: int
+    extract_path: Optional[str] = None   # 응답에서 값을 뽑을 JSON path (예: data.cards[0].cardId)
+    extract_var: Optional[str] = None    # 추출한 값을 저장할 변수명 (이후 스텝에서 {{변수명}}으로 참조)
 
 
 class FlowCreateRequest(BaseModel):
@@ -41,7 +44,7 @@ def create_flow(req: FlowCreateRequest, db: Session = Depends(get_db)):
     flow = models.TestFlow(
         project_id=req.project_id,
         name=req.name,
-        steps=[{"case_id": s.case_id, "order": s.order} for s in req.steps],
+        steps=[s.model_dump() for s in req.steps],
     )
     db.add(flow)
     db.commit()
@@ -55,7 +58,7 @@ def update_flow(flow_id: int, req: FlowUpdateRequest, db: Session = Depends(get_
     if not flow:
         raise HTTPException(status_code=404, detail="플로우를 찾을 수 없습니다")
     flow.name = req.name
-    flow.steps = [{"case_id": s.case_id, "order": s.order} for s in req.steps]
+    flow.steps = [s.model_dump() for s in req.steps]
     db.commit()
     db.refresh(flow)
     return {"id": flow.id, "name": flow.name, "steps": flow.steps}

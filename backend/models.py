@@ -19,6 +19,7 @@ class Project(Base):
     notification_configs = relationship("NotificationConfig", back_populates="project", cascade="all, delete-orphan")
     case_histories = relationship("CaseHistory", back_populates="project", cascade="all, delete-orphan")
     test_suites = relationship("TestSuite", back_populates="project", cascade="all, delete-orphan")
+    presets = relationship("ProjectPreset", back_populates="project", cascade="all, delete-orphan")
 
 
 class QASnapshot(Base):
@@ -121,6 +122,22 @@ class NotificationConfig(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     project = relationship("Project", back_populates="notification_configs")
+
+
+class ProjectPreset(Base):
+    """프로젝트별로 저장해두고 재사용하는 헤더/URL/파라미터 값"""
+    __tablename__ = "project_presets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    kind = Column(String(20), nullable=False)    # "header" | "url" | "param" | "path" | "body"
+    label = Column(String(100), nullable=False)  # 식별용 이름 (예: "인증 토큰")
+    key = Column(String(200), nullable=True)      # header/param의 키 (url/path는 사용 안 함)
+    value = Column(Text, nullable=False)
+    category_id = Column(String(50), nullable=True)  # 지정 시 해당 카테고리 선택할 때 자동 적용됨 (mgr.cats의 id)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("Project", back_populates="presets")
 
 
 class CaseHistory(Base):

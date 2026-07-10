@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket, BarChart2, GitCommitHorizontal, LayoutDashboard, Layers, Bell } from 'lucide-react';
+import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket, BarChart2, GitCommitHorizontal, LayoutDashboard, Layers, Bell, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Project, QAData, PF, DepPF } from '../types/qa';
 import { listProjects, createProject } from '../api/projects';
@@ -8,7 +8,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { cn } from '../lib/utils';
 
-export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history' | 'analytics' | 'case-history' | 'suites' | 'notifications';
+export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history' | 'analytics' | 'case-history' | 'suites' | 'notifications' | 'presets';
 
 interface Props {
   tab: TabKey;
@@ -48,6 +48,7 @@ const GROUPS: { key: string; label: string; tabs: { key: TabKey; label: string; 
     label: 'Settings',
     tabs: [
       { key: 'notifications', label: '알림 설정', icon: <Bell className="size-3.5" /> },
+      { key: 'presets', label: '저장된 값 관리', icon: <KeyRound className="size-3.5" /> },
     ],
   },
 ];

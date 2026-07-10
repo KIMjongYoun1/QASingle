@@ -12,6 +12,7 @@ import CaseHistoryPage from './pages/CaseHistoryPage';
 import DashboardPage from './pages/DashboardPage';
 import SuitePage from './pages/SuitePage';
 import NotificationsPage from './pages/NotificationsPage';
+import PresetsPage from './pages/PresetsPage';
 import ExcelImportModal from './components/ExcelImportModal';
 import AnalysisModal from './components/AnalysisModal';
 import { useQAStore } from './store/useQAStore';
@@ -71,6 +72,7 @@ function App() {
               {tab === 'analytics' && <AnalyticsPage />}
               {tab === 'case-history' && <CaseHistoryPage />}
               {tab === 'notifications' && <NotificationsPage />}
+              {tab === 'presets' && <PresetsPage />}
               {tab === 'tst' && (
                 <ReportPage
                   mode="tst"

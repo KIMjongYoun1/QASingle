@@ -4,7 +4,7 @@ import { useQAStore } from '../store/useQAStore';
 import { createRun, getRun, listRuns, type RunStatus, type RunSummary } from '../api/runs';
 import { parseOpenApi, type ParsedOpenApiCase } from '../api/openapi';
 import { listFlows, createFlow, updateFlow, deleteFlow } from '../api/flows';
-import type { TestFlow } from '../types/qa';
+import type { TestFlow, FlowStep } from '../types/qa';
 import DiffViewer from '../components/DiffViewer';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Progress, ProgressTrack, ProgressIndicator } from '../components/ui/progress';
@@ -63,7 +63,7 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
   const [flows, setFlows] = useState<TestFlow[]>([]);
   const [selectedFlowIds, setSelectedFlowIds] = useState<Set<number>>(new Set());
   const [flowEditing, setFlowEditing] = useState<TestFlow | null>(null);
-  const [flowForm, setFlowForm] = useState<{ name: string; stepIds: string[] } | null>(null);
+  const [flowForm, setFlowForm] = useState<{ name: string; steps: FlowStep[] } | null>(null);
 
   // ── 히스토리 / Suite ─────────────────────────────────────────
   const [history, setHistory] = useState<RunSummary[]>([]);
@@ -164,16 +164,16 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
     setTab('cases');
   };
 
-  const openCreateFlow = () => { setFlowEditing(null); setFlowForm({ name: '', stepIds: [] }); };
+  const openCreateFlow = () => { setFlowEditing(null); setFlowForm({ name: '', steps: [] }); };
   const openEditFlow = (f: TestFlow) => {
     setFlowEditing(f);
-    setFlowForm({ name: f.name, stepIds: f.steps.sort((a, b) => a.order - b.order).map((s) => s.case_id) });
+    setFlowForm({ name: f.name, steps: [...f.steps].sort((a, b) => a.order - b.order) });
   };
   const closeFlowForm = () => { setFlowForm(null); setFlowEditing(null); };
 
   const saveFlow = async () => {
     if (!flowForm || !projectId) return;
-    const steps = flowForm.stepIds.map((id, i) => ({ case_id: id, order: i }));
+    const steps = flowForm.steps.map((s, i) => ({ ...s, order: i }));
     try {
       if (flowEditing) {
         const updated = await updateFlow(flowEditing.id, flowForm.name, steps);
@@ -203,19 +203,28 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
 
   const moveStep = (idx: number, dir: -1 | 1) => {
     if (!flowForm) return;
-    const arr = [...flowForm.stepIds];
+    const arr = [...flowForm.steps];
     const target = idx + dir;
     if (target < 0 || target >= arr.length) return;
     [arr[idx], arr[target]] = [arr[target], arr[idx]];
-    setFlowForm({ ...flowForm, stepIds: arr });
+    setFlowForm({ ...flowForm, steps: arr });
   };
 
   const toggleFlowStep = (caseId: string) => {
     if (!flowForm) return;
-    const ids = flowForm.stepIds.includes(caseId)
-      ? flowForm.stepIds.filter((id) => id !== caseId)
-      : [...flowForm.stepIds, caseId];
-    setFlowForm({ ...flowForm, stepIds: ids });
+    const exists = flowForm.steps.some((s) => s.case_id === caseId);
+    const steps = exists
+      ? flowForm.steps.filter((s) => s.case_id !== caseId)
+      : [...flowForm.steps, { case_id: caseId, order: flowForm.steps.length }];
+    setFlowForm({ ...flowForm, steps });
+  };
+
+  const updateStepExtract = (caseId: string, field: 'extract_path' | 'extract_var', value: string) => {
+    if (!flowForm) return;
+    setFlowForm({
+      ...flowForm,
+      steps: flowForm.steps.map((s) => (s.case_id === caseId ? { ...s, [field]: value } : s)),
+    });
   };
 
   const toggleSelectedFlow = (flowId: number) => {
@@ -477,6 +486,7 @@ export default function AutoRunPage({ onGoHistory }: { onGoHistory?: () => void 
           onSave={saveFlow}
           onMoveStep={moveStep}
           onToggleStep={toggleFlowStep}
+          onUpdateExtract={updateStepExtract}
           onNameChange={(name) => setFlowForm({ ...flowForm, name })}
         />
       )}

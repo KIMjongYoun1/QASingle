@@ -20,10 +20,10 @@ is_running() {
 if is_running "$BACKEND_PID_FILE"; then
   echo "[backend] 이미 실행 중 (PID $(cat "$BACKEND_PID_FILE"))"
 else
-  echo "[backend] 시작 중... (http://localhost:8001)"
+  echo "[backend] 시작 중... (http://localhost:8000)"
   cd "$ROOT_DIR/backend"
   source venv/bin/activate
-  nohup uvicorn main:app --host 0.0.0.0 --port 8001 > "$BACKEND_LOG" 2>&1 &
+  nohup uvicorn main:app --host 0.0.0.0 --port 8000 > "$BACKEND_LOG" 2>&1 &
   echo $! > "$BACKEND_PID_FILE"
   deactivate
   echo "[backend] 시작됨 (PID $(cat "$BACKEND_PID_FILE")), 로그: $BACKEND_LOG"
@@ -42,6 +42,6 @@ fi
 
 echo ""
 echo "QA-Server 구동 완료"
-echo "  - Backend:  http://localhost:8001"
+echo "  - Backend:  http://localhost:8000"
 echo "  - Frontend: http://localhost:5174 (Vite가 포트를 자동 변경할 수 있으니 로그 확인: $FRONTEND_LOG)"
 echo "  - 종료: scripts/stop.sh"
