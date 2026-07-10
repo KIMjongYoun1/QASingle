@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/presets", tags=["presets"])
 
 class PresetCreate(BaseModel):
     project_id: int
-    kind: str            # "header" | "url" | "param" | "path" | "body"
+    kind: str            # "header" | "url" | "param" | "path" | "body" | "assertion_path"
     label: str
     key: Optional[str] = None
     value: str
@@ -46,8 +46,8 @@ def list_presets(project_id: int, db: Session = Depends(get_db)):
 
 @router.post("")
 def create_preset(body: PresetCreate, db: Session = Depends(get_db)):
-    if body.kind not in ("header", "url", "param", "path", "body"):
-        raise HTTPException(status_code=400, detail="kind는 header, url, param, path, body만 가능합니다")
+    if body.kind not in ("header", "url", "param", "path", "body", "assertion_path"):
+        raise HTTPException(status_code=400, detail="kind는 header, url, param, path, body, assertion_path만 가능합니다")
     preset = models.ProjectPreset(**body.model_dump())
     db.add(preset)
     db.commit()

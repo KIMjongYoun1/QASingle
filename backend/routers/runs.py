@@ -9,8 +9,10 @@ import os
 import re
 import json
 import copy
+import base64
 from urllib.parse import urlencode
 import httpx
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from database import get_db, SessionLocal
 import models
 from services.notification import notification_service
@@ -261,6 +263,41 @@ def _extract_json_path(data, path: str):
     return current
 
 
+# ── 암복호화 (AES-256-GCM, ApiEndpointTest의 CryptoUtil.java와 호환) ────────────
+
+def _aes_gcm_encrypt_embedded(plain_text: str, key_b64: str) -> str:
+    """바디 전체 암호화: IV(12바이트)를 암호문 앞에 붙여 Base64 하나로 반환"""
+    key = base64.b64decode(key_b64)
+    iv = os.urandom(12)
+    ct = AESGCM(key).encrypt(iv, plain_text.encode("utf-8"), None)
+    return base64.b64encode(iv + ct).decode("utf-8")
+
+
+def _aes_gcm_decrypt_embedded(b64_payload: str, key_b64: str) -> str:
+    key = base64.b64decode(key_b64)
+    raw = base64.b64decode(b64_payload)
+    iv, ct = raw[:12], raw[12:]
+    return AESGCM(key).decrypt(iv, ct, None).decode("utf-8")
+
+
+def _aes_gcm_encrypt_external_iv(plain_text: str, key_b64: str, iv: bytes) -> str:
+    """파라미터 단위 암호화: 공유 IV로 암호문만 반환 (IV 미포함)"""
+    key = base64.b64decode(key_b64)
+    ct = AESGCM(key).encrypt(iv, plain_text.encode("utf-8"), None)
+    return base64.b64encode(ct).decode("utf-8")
+
+
+class _DecryptedResponse:
+    """복호화된 내용을 assertion/추출 로직이 그대로 쓸 수 있게 httpx.Response처럼 감싼 래퍼"""
+    def __init__(self, status_code: int, decrypted_text: str, headers):
+        self.status_code = status_code
+        self.text = decrypted_text
+        self.headers = headers
+
+    def json(self):
+        return json.loads(self.text)
+
+
 def _make_request(client: httpx.Client, case: dict, base_url: str, variables: dict | None = None) -> tuple[bool, str, str, dict]:
     """httpx로 단일 케이스 실행. (passed, actual_text, notes, extracted_vars) 반환"""
     variables = variables or {}
@@ -277,6 +314,27 @@ def _make_request(client: httpx.Client, case: dict, base_url: str, variables: di
             body_data = json.loads(body_str)
         except Exception:
             body_data = body_str
+
+    # 암호화 호출 — 케이스에 저장된 키로 이번 요청 전용 IV를 즉석에서 생성해 암호화
+    # (IV는 저장하지 않고 요청마다 새로 만듦, 엔드포인트는 /secure 접두어 사용)
+    if case.get("encrypted") and case.get("encryptionKeyBase64"):
+        key_b64 = case["encryptionKeyBase64"]
+        scope = case.get("encryptionScope") or "body"
+        endpoint = "/secure" + endpoint
+        if scope == "param" and isinstance(body_data, dict):
+            encrypted_keys = set(case.get("encryptedFieldKeys") or [])
+            iv = os.urandom(12)
+            case_headers["X-IV"] = base64.b64encode(iv).decode("utf-8")
+            new_body = {}
+            for k, v in body_data.items():
+                if k in encrypted_keys:
+                    new_body[f"{k}_enc"] = _aes_gcm_encrypt_external_iv(json.dumps(v, ensure_ascii=False), key_b64, iv)
+                else:
+                    new_body[k] = v
+            body_data = new_body
+        else:
+            plain_json = json.dumps(body_data if body_data is not None else {}, ensure_ascii=False)
+            body_data = {"encData": _aes_gcm_encrypt_embedded(plain_json, key_b64)}
 
     # 케이스별 baseUrl이 있으면 우선 사용, 없으면 전역 base_url fallback
     effective_base = (case.get("baseUrl") or base_url).rstrip("/")
@@ -296,9 +354,23 @@ def _make_request(client: httpx.Client, case: dict, base_url: str, variables: di
         status_ok = resp.status_code == expected_status
         body_snippet = resp.text[:500]
 
+        # 암호화 호출이면 응답의 encData를 복호화해서, 이후 로직은 복호화된 내용을 보게 함
+        eval_resp = resp
+        decrypted_note = ""
+        if case.get("encrypted") and case.get("encryptionKeyBase64"):
+            try:
+                raw_json = resp.json()
+                enc_data = (raw_json.get("data") or {}).get("encData")
+                if enc_data:
+                    plain_text = _aes_gcm_decrypt_embedded(enc_data, case["encryptionKeyBase64"])
+                    eval_resp = _DecryptedResponse(resp.status_code, plain_text, resp.headers)
+                    decrypted_note = f"\n[Response Decrypted] {plain_text[:500]}"
+            except Exception as e:
+                decrypted_note = f"\n[Response Decrypt Error] {str(e)}"
+
         # assertion 평가
         assertions = case.get('assertions') or []
-        assertion_results = [_eval_assertion(a, resp) for a in assertions]
+        assertion_results = [_eval_assertion(a, eval_resp) for a in assertions]
 
         if assertion_results:
             passed = status_ok and all(r['passed'] for r in assertion_results)
@@ -322,6 +394,8 @@ def _make_request(client: httpx.Client, case: dict, base_url: str, variables: di
         if body_data is not None:
             notes_lines.append(f"[Request Body] {json.dumps(body_data, ensure_ascii=False) if isinstance(body_data, (dict, list)) else body_data}")
         notes_lines.append(f"[Response {resp.status_code}] {body_snippet}")
+        if decrypted_note:
+            notes_lines.append(decrypted_note.lstrip("\n"))
         if assertion_results:
             notes_lines.append('[Assertions]')
             for r in assertion_results:
@@ -340,7 +414,7 @@ def _make_request(client: httpx.Client, case: dict, base_url: str, variables: di
         extract_path = case.get("extract_path")
         if passed and extract_var and extract_path:
             try:
-                value = _extract_json_path(resp.json(), extract_path)
+                value = _extract_json_path(eval_resp.json(), extract_path)
                 extracted[extract_var] = value
                 notes += f"\n[Extract] {extract_path} → {{{{{extract_var}}}}} = {value}"
             except Exception as e:

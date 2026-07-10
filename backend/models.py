@@ -20,6 +20,7 @@ class Project(Base):
     case_histories = relationship("CaseHistory", back_populates="project", cascade="all, delete-orphan")
     test_suites = relationship("TestSuite", back_populates="project", cascade="all, delete-orphan")
     presets = relationship("ProjectPreset", back_populates="project", cascade="all, delete-orphan")
+    encryption_configs = relationship("EncryptionConfig", back_populates="project", cascade="all, delete-orphan")
 
 
 class QASnapshot(Base):
@@ -130,7 +131,7 @@ class ProjectPreset(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    kind = Column(String(20), nullable=False)    # "header" | "url" | "param" | "path" | "body"
+    kind = Column(String(20), nullable=False)    # "header" | "url" | "param" | "path" | "body" | "assertion_path"
     label = Column(String(100), nullable=False)  # 식별용 이름 (예: "인증 토큰")
     key = Column(String(200), nullable=True)      # header/param의 키 (url/path는 사용 안 함)
     value = Column(Text, nullable=False)
@@ -138,6 +139,21 @@ class ProjectPreset(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     project = relationship("Project", back_populates="presets")
+
+
+class EncryptionConfig(Base):
+    """프로젝트별 암복호화 설정 — 저장된 값(프리셋)과 별개의 전용 테이블/화면으로 관리
+    (추후 사용자/관리자 권한으로 메뉴 노출을 나눌 수 있도록 의도적으로 분리)"""
+    __tablename__ = "encryption_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    label = Column(String(100), nullable=False)   # 식별용 이름 (예: "결제 암호화 키")
+    mode = Column(String(20), nullable=False, default="GCM")  # 현재는 GCM만 지원
+    key_base64 = Column(String(100), nullable=False)  # AES-256 키 32바이트를 Base64로 저장
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("Project", back_populates="encryption_configs")
 
 
 class CaseHistory(Base):

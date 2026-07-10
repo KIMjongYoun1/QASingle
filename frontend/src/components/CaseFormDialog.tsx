@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { useQAStore } from '../store/useQAStore';
 import type { Assertion, CaseType, KV, PF, TestCase } from '../types/qa';
 import { listPresets, type ProjectPreset, type PresetKind } from '../api/presets';
+import { listEncryptionConfigs, type EncryptionConfig } from '../api/encryptionConfigs';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
@@ -119,10 +120,24 @@ function KVEditor({ title, rows, onChange, presets }: { title: string; rows: KV[
   );
 }
 
-function AssertionEditor({ rows, onChange }: { rows: Assertion[]; onChange: (rows: Assertion[]) => void }) {
+const OPERATORS_BY_TARGET: Record<Assertion['target'], Assertion['operator'][]> = {
+  status_code: ['eq', 'gt', 'lt'],
+  body_json: ['eq', 'contains', 'not_contains', 'exists', 'not_exists', 'gt', 'lt'],
+  body_text: ['eq', 'contains', 'not_contains'],
+  header: ['eq', 'contains', 'not_contains', 'exists', 'not_exists'],
+};
+
+function AssertionEditor({ rows, onChange, pathSuggestions }: { rows: Assertion[]; onChange: (rows: Assertion[]) => void; pathSuggestions?: string[] }) {
   const update = (idx: number, patch: Partial<Assertion>) => onChange(rows.map((r, i) => i === idx ? { ...r, ...patch } : r));
   const needsPath = (t: Assertion['target']) => t === 'body_json' || t === 'header';
   const needsValue = (op: Assertion['operator']) => op !== 'exists' && op !== 'not_exists';
+  const availableOperators = (t: Assertion['target']) =>
+    ASSERTION_OPERATORS.filter((op) => OPERATORS_BY_TARGET[t].includes(op.value));
+  const onTargetChange = (i: number, t: Assertion['target']) => {
+    const allowed = OPERATORS_BY_TARGET[t];
+    const currentOp = rows[i].operator;
+    update(i, { target: t, path: '', ...(allowed.includes(currentOp) ? {} : { operator: allowed[0] }) });
+  };
   return (
     <div className="mb-2">
       <div className="mb-1 flex items-center justify-between">
@@ -135,14 +150,29 @@ function AssertionEditor({ rows, onChange }: { rows: Assertion[]; onChange: (row
         <div className="flex flex-col gap-1.5">
           {rows.map((r, i) => (
             <div key={i} className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 p-1.5">
-              <select value={r.target} onChange={(e) => update(i, { target: e.target.value as Assertion['target'], path: '' })} className="h-7 rounded border border-input bg-background px-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-ring">
+              <select value={r.target} onChange={(e) => onTargetChange(i, e.target.value as Assertion['target'])} className="h-7 rounded border border-input bg-background px-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-ring">
                 {ASSERTION_TARGETS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
               {needsPath(r.target) && (
-                <input placeholder={r.target === 'body_json' ? 'data.success' : 'Content-Type'} value={r.path || ''} onChange={(e) => update(i, { path: e.target.value })} className="h-7 w-28 rounded border border-input bg-background px-1.5 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-ring" />
+                <>
+                  <input
+                    list={r.target === 'body_json' ? `assertionBodyPathSuggestions-${i}` : undefined}
+                    placeholder={r.target === 'body_json' ? '예: code, message, data.status' : 'Content-Type'}
+                    value={r.path || ''}
+                    onChange={(e) => update(i, { path: e.target.value })}
+                    className="h-7 w-32 rounded border border-input bg-background px-1.5 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  {r.target === 'body_json' && (
+                    <datalist id={`assertionBodyPathSuggestions-${i}`}>
+                      {(pathSuggestions || [])
+                        .filter((v, idx, arr) => arr.indexOf(v) === idx)
+                        .map((v) => <option key={v} value={v} />)}
+                    </datalist>
+                  )}
+                </>
               )}
               <select value={r.operator} onChange={(e) => update(i, { operator: e.target.value as Assertion['operator'] })} className="h-7 rounded border border-input bg-background px-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-ring">
-                {ASSERTION_OPERATORS.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
+                {availableOperators(r.target).map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
               </select>
               {needsValue(r.operator) && (
                 <input placeholder="기대값" value={r.value || ''} onChange={(e) => update(i, { value: e.target.value })} className="h-7 min-w-0 flex-1 rounded border border-input bg-background px-1.5 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-ring" />
@@ -178,6 +208,19 @@ export default function CaseFormDialog({ open, onClose, editCase, onSaved }: Pro
   }, [open, projectId]);
   const presetsByKind = (kind: PresetKind) => presets.filter((p) => p.kind === kind);
 
+  const [encryptionConfigs, setEncryptionConfigs] = useState<EncryptionConfig[]>([]);
+  useEffect(() => {
+    if (open && projectId) listEncryptionConfigs(projectId).then(setEncryptionConfigs).catch(() => setEncryptionConfigs([]));
+  }, [open, projectId]);
+  const [encrypted, setEncrypted] = useState(!!editCase?.encrypted);
+  const [encryptionScope, setEncryptionScope] = useState<'body' | 'param'>(editCase?.encryptionScope || 'body');
+  const [encryptionKeyBase64, setEncryptionKeyBase64] = useState(editCase?.encryptionKeyBase64 || '');
+  const [encryptionMode, setEncryptionMode] = useState<'GCM' | 'CBC'>(editCase?.encryptionMode || 'GCM');
+  const [encryptedFieldKeys, setEncryptedFieldKeys] = useState<string[]>(editCase?.encryptedFieldKeys || []);
+  const toggleEncryptedField = (key: string) => setEncryptedFieldKeys((prev) =>
+    prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+  );
+
   const nextId = () => {
     const nums = cases.map((c) => parseInt(c.id.replace(/\D/g, '')) || 0);
     return 'TC-' + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
@@ -207,8 +250,10 @@ export default function CaseFormDialog({ open, onClose, editCase, onSaved }: Pro
   const [confirming, setConfirming] = useState(false);
   const [entryMode, setEntryModeRaw] = useState<'category' | 'manual'>(editCase?.catId ? 'category' : 'manual');
   const setEntryMode = (mode: 'category' | 'manual') => {
-    if (mode === 'manual') setBodyRawText((prev) => prev || serializeBodyFields(bodyFields));
-    if (mode === 'category') setBodyFields((prev) => (prev.length > 0 ? prev : parseBodyFields(bodyRawText)));
+    if (mode === entryMode) return;
+    // 방금 있던 모드에서 수정한 내용을 그대로 반영해서 넘어감 (이전 값이 남아있지 않도록 무조건 덮어씀)
+    if (mode === 'manual') setBodyRawText(serializeBodyFields(bodyFields));
+    if (mode === 'category') setBodyFields(parseBodyFields(bodyRawText));
     setEntryModeRaw(mode);
   };
 
@@ -270,7 +315,8 @@ export default function CaseFormDialog({ open, onClose, editCase, onSaved }: Pro
 
   const buildPreview = () => {
     const qs = form.queryParams.filter((q) => q.key).map((q) => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`).join('&');
-    const url = `${form.baseUrl ? form.baseUrl.replace(/\/$/, '') : '[전역 URL]'}${form.endpoint}${qs ? `?${qs}` : ''}`;
+    const effectiveEndpoint = encrypted ? `/secure${form.endpoint}` : form.endpoint;
+    const url = `${form.baseUrl ? form.baseUrl.replace(/\/$/, '') : '[전역 URL]'}${effectiveEndpoint}${qs ? `?${qs}` : ''}`;
     const headers = Object.fromEntries(form.headers.filter((h) => h.key).map((h) => [h.key, h.value]));
     let body: unknown;
     if (entryMode === 'manual') {
@@ -287,6 +333,9 @@ export default function CaseFormDialog({ open, onClose, editCase, onSaved }: Pro
       headers,
       body,
       assertions: form.assertions,
+      ...(encrypted ? {
+        암호화: `실제 전송 시 ${encryptionScope === 'body' ? '바디 전체' : `필드(${encryptedFieldKeys.join(', ') || '없음'})`}가 암호화되어 위 body 자리는 실제로 encData(또는 *_enc 필드)로 대체됩니다`,
+      } : {}),
     };
   };
 
@@ -302,7 +351,16 @@ export default function CaseFormDialog({ open, onClose, editCase, onSaved }: Pro
       input: buildInput(form.method, form.endpoint),
       expectedStatus: form.expectedStatus ? Number(form.expectedStatus) : undefined,
       body: entryMode === 'manual' ? bodyRawText : serializeBodyFields(bodyFields),
+      encrypted,
+      encryptionScope: encrypted ? encryptionScope : undefined,
+      encryptionKeyBase64: encrypted ? encryptionKeyBase64 : undefined,
+      encryptionMode: encrypted ? encryptionMode : undefined,
+      encryptedFieldKeys: encrypted && encryptionScope === 'param' ? encryptedFieldKeys : undefined,
     };
+    if (encrypted && !encryptionKeyBase64) {
+      toast.error('암호화 설정을 선택하세요');
+      return;
+    }
     if (editCase) {
       updateCase(editCase.id, payload);
       toast.success('케이스를 수정했습니다');
@@ -497,7 +555,64 @@ export default function CaseFormDialog({ open, onClose, editCase, onSaved }: Pro
                       />
                     </div>
                   )}
-                  <AssertionEditor rows={form.assertions} onChange={(rows) => setForm({ ...form, assertions: rows })} />
+
+                  <div className="mb-2 rounded-md border border-border bg-muted/30 p-2">
+                    <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-foreground">
+                      <input type="checkbox" checked={encrypted} onChange={(e) => setEncrypted(e.target.checked)} className="size-3.5 accent-primary" />
+                      암호화 호출 — 요청을 암호화해서 보내고 응답을 복호화해서 판정
+                    </label>
+                    {encrypted && (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <div>
+                          <label className="mb-1 block text-[10px] text-muted-foreground">암호화 설정 선택</label>
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const cfg = encryptionConfigs.find((c) => String(c.id) === e.target.value);
+                              if (cfg) { setEncryptionKeyBase64(cfg.key_base64); setEncryptionMode(cfg.mode); }
+                            }}
+                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                          >
+                            <option value="">
+                              {encryptionKeyBase64 ? `선택됨: ${encryptionMode} 키 ...${encryptionKeyBase64.slice(-8)}` : '-- 암호화 설정 선택 --'}
+                            </option>
+                            {encryptionConfigs.map((c) => <option key={c.id} value={c.id}>{c.label} ({c.mode})</option>)}
+                          </select>
+                          {encryptionConfigs.length === 0 && (
+                            <p className="mt-1 text-[10px] text-muted-foreground">등록된 암호화 설정이 없습니다 — 사이드바 "암호화 설정" 메뉴에서 먼저 등록하세요.</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-[10px] text-muted-foreground">암호화 범위</label>
+                          <div className="flex gap-1.5">
+                            <button type="button" onClick={() => setEncryptionScope('body')} className={cn('flex-1 rounded-lg border py-1.5 text-xs font-medium transition-all', encryptionScope === 'body' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-secondary/60')}>바디 전체</button>
+                            <button type="button" onClick={() => setEncryptionScope('param')} className={cn('flex-1 rounded-lg border py-1.5 text-xs font-medium transition-all', encryptionScope === 'param' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-secondary/60')}>파라미터 단위</button>
+                          </div>
+                        </div>
+
+                        {encryptionScope === 'param' && (
+                          <div>
+                            <label className="mb-1 block text-[10px] text-muted-foreground">암호화할 필드 선택 (체크한 필드만 개별 암호화, 나머지는 평문)</label>
+                            {bodyFields.length === 0 ? (
+                              <p className="text-[11px] text-muted-foreground">바디 필드가 없습니다 — 먼저 바디에 필드를 추가하세요.</p>
+                            ) : (
+                              <div className="flex flex-col gap-1 rounded-md border border-border bg-background/60 p-1.5">
+                                {bodyFields.map((f) => (
+                                  <label key={f.key} className="flex cursor-pointer items-center gap-2 text-[11px]">
+                                    <input type="checkbox" checked={encryptedFieldKeys.includes(f.key)} onChange={() => toggleEncryptedField(f.key)} className="size-3.5 accent-primary" />
+                                    <span className="font-mono">{f.key}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <AssertionEditor rows={form.assertions} onChange={(rows) => setForm({ ...form, assertions: rows })} pathSuggestions={presetsByKind('assertion_path').map((p) => p.value)} />
                 </div>
               )}
             </div>

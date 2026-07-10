@@ -9,7 +9,7 @@ import sqlalchemy
 
 from database import engine
 import models
-from routers import projects, qa_data, excel, analysis, openapi, runs, flows, notifications, analytics, suites, presets
+from routers import projects, qa_data, excel, analysis, openapi, runs, flows, notifications, analytics, suites, presets, encryption_configs
 
 # ── 로깅 설정 ──────────────────────────────────────────────────────────────
 _LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
@@ -90,6 +90,7 @@ app.include_router(notifications.router)
 app.include_router(analytics.router)
 app.include_router(suites.router)
 app.include_router(presets.router)
+app.include_router(encryption_configs.router)
 
 # QA 디렉토리 정적 파일 서빙
 QA_DIR = os.path.join(os.path.dirname(__file__), "..", "QA")

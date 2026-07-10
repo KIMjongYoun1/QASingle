@@ -42,6 +42,11 @@ export interface TestCase {
   queryParams?: KV[];
   body?: string;
   assertions?: Assertion[];
+  encrypted?: boolean;
+  encryptionScope?: 'body' | 'param';
+  encryptionKeyBase64?: string;
+  encryptionMode?: 'GCM' | 'CBC';
+  encryptedFieldKeys?: string[];
 }
 
 export interface TstExecution {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket, BarChart2, GitCommitHorizontal, LayoutDashboard, Layers, Bell, KeyRound } from 'lucide-react';
+import { ChevronRight, ClipboardList, FileText, Folder, History, Plus, Rocket, BarChart2, GitCommitHorizontal, LayoutDashboard, Layers, Bell, KeyRound, Lock, HelpCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Project, QAData, PF, DepPF } from '../types/qa';
 import { listProjects, createProject } from '../api/projects';
@@ -8,7 +8,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { cn } from '../lib/utils';
 
-export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history' | 'analytics' | 'case-history' | 'suites' | 'notifications' | 'presets';
+export type TabKey = 'mgr' | 'tst' | 'dep' | 'auto' | 'history' | 'analytics' | 'case-history' | 'suites' | 'notifications' | 'presets' | 'encryption';
 
 interface Props {
   tab: TabKey;
@@ -17,6 +17,7 @@ interface Props {
   onProjectChange: (id: number | null) => void;
   onOpenExcelImport: () => void;
   onOpenAnalysis: () => void;
+  onOpenHelp: () => void;
   onSelectCase: (tree: 'tst' | 'dep', caseId: string) => void;
   onOpenDashboard: () => void;
   data: QAData;
@@ -49,6 +50,7 @@ const GROUPS: { key: string; label: string; tabs: { key: TabKey; label: string; 
     tabs: [
       { key: 'notifications', label: '알림 설정', icon: <Bell className="size-3.5" /> },
       { key: 'presets', label: '저장된 값 관리', icon: <KeyRound className="size-3.5" /> },
+      { key: 'encryption', label: '암호화 설정', icon: <Lock className="size-3.5" /> },
     ],
   },
 ];
@@ -60,7 +62,7 @@ function statusDot(pf?: PF | DepPF) {
   return 'bg-muted-foreground/40';
 }
 
-export default function Sidebar({ tab, onTabChange, projectId, onProjectChange, onOpenExcelImport, onOpenAnalysis, onSelectCase, onOpenDashboard, data }: Props) {
+export default function Sidebar({ tab, onTabChange, projectId, onProjectChange, onOpenExcelImport, onOpenAnalysis, onOpenHelp, onSelectCase, onOpenDashboard, data }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -301,6 +303,9 @@ export default function Sidebar({ tab, onTabChange, projectId, onProjectChange, 
       </div>
 
       <div className="flex flex-col gap-2 border-t border-border pt-2">
+        <Button variant="outline" size="sm" className="w-full justify-start" onClick={onOpenHelp} title="사용 설명서">
+          <HelpCircle className="size-3.5" /> 사용 설명서
+        </Button>
         <Button variant="outline" size="sm" className="w-full justify-start" onClick={onOpenExcelImport} title="연동규격서 엑셀에서 케이스 생성">
           📥 엑셀 임포트
         </Button>

@@ -11,7 +11,7 @@ export default function Header({ projectName }: Props) {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <header className="flex h-14 items-center gap-3 border-b border-border bg-card px-5">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-5">
       <span className="text-sm font-semibold text-foreground">
         {projectName ?? '프로젝트 미선택'}
       </span>

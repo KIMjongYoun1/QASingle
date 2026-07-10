@@ -127,7 +127,7 @@ export default function NotificationsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
+    <div className="mx-auto max-w-6xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">알림 설정</h2>
@@ -140,7 +140,7 @@ export default function NotificationsPage() {
 
       {/* 추가 폼 */}
       {adding && (
-        <div className="mb-4 rounded-xl border border-border bg-card p-4">
+        <div className="mb-4 max-w-xl rounded-xl border border-border bg-card p-4">
           <p className="mb-3 text-sm font-semibold">새 알림 설정</p>
 
           {/* 타입 선택 */}
@@ -236,7 +236,7 @@ export default function NotificationsPage() {
           <p className="mt-1 text-xs text-muted-foreground">위의 추가 버튼으로 Discord 또는 Slack 웹훅을 등록하세요</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {configs.map((cfg) => {
             const meta = TYPE_META[cfg.type] ?? TYPE_META.discord;
             const isEditing = editingId === cfg.id;

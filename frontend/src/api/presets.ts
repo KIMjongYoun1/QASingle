@@ -1,6 +1,6 @@
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
-export type PresetKind = 'header' | 'url' | 'param' | 'path' | 'body';
+export type PresetKind = 'header' | 'url' | 'param' | 'path' | 'body' | 'assertion_path';
 
 export interface ProjectPreset {
   id: number;

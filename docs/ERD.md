@@ -100,6 +100,26 @@ erDiagram
         timestamp updated_at
     }
 
+    project_presets {
+        int id PK
+        int project_id FK
+        varchar kind
+        varchar label
+        varchar key
+        text value
+        varchar category_id
+        timestamp created_at
+    }
+
+    encryption_configs {
+        int id PK
+        int project_id FK
+        varchar label
+        varchar mode
+        varchar key_base64
+        timestamp created_at
+    }
+
     projects ||--o{ qa_snapshots         : "1:1 (upsert)"
     projects ||--o{ deploy_histories     : "1:N"
     projects ||--o{ test_flows           : "1:N"
@@ -107,6 +127,8 @@ erDiagram
     projects ||--o{ notification_configs : "1:N"
     projects ||--o{ case_histories       : "1:N (auto)"
     projects ||--o{ test_suites          : "1:N"
+    projects ||--o{ project_presets      : "1:N"
+    projects ||--o{ encryption_configs   : "1:N"
     test_runs ||--o{ run_comments        : "1:N (append-only)"
 ```
 
@@ -121,4 +143,6 @@ erDiagram
 | projects → notification_configs | Discord / Slack 웹훅 설정. 여러 개 등록 가능 |
 | projects → case_histories | 케이스 관리 저장 시 스냅샷 diff로 자동 생성. 수정·삭제 없음 |
 | projects → test_suites | 케이스+플로우 묶음 스위트. is_default 설정 시 진입 시 자동 적용 |
+| projects → project_presets | 저장된 값(헤더·URL·경로·파라미터·바디·판정조건경로). category_id로 카테고리 자동 적용 연결 |
+| projects → encryption_configs | AES-256-GCM 암호화 키. project_presets와 별도 테이블로 분리 |
 | test_runs → run_comments | 추가 전용 댓글. 수정·삭제 엔드포인트 없음 |

@@ -13,8 +13,10 @@ import DashboardPage from './pages/DashboardPage';
 import SuitePage from './pages/SuitePage';
 import NotificationsPage from './pages/NotificationsPage';
 import PresetsPage from './pages/PresetsPage';
+import EncryptionConfigsPage from './pages/EncryptionConfigsPage';
 import ExcelImportModal from './components/ExcelImportModal';
 import AnalysisModal from './components/AnalysisModal';
+import HelpGuideModal from './components/HelpGuideModal';
 import { useQAStore } from './store/useQAStore';
 import { listProjects } from './api/projects';
 import type { Project } from './types/qa';
@@ -23,6 +25,7 @@ function App() {
   const [tab, setTab] = useState<TabKey>('mgr');
   const [showExcel, setShowExcel] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [showDashboard, setShowDashboard] = useState(true);
   const [projects, setProjects] = useState<Project[]>([]);
   const [focusCase, setFocusCase] = useState<{ tree: 'tst' | 'dep'; id: string; nonce: number } | null>(null);
@@ -42,7 +45,7 @@ function App() {
   const projectName = projects.find((p) => p.id === projectId)?.name ?? null;
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar
         tab={tab}
         onTabChange={(t) => { setShowDashboard(false); setTab(t); }}
@@ -50,13 +53,14 @@ function App() {
         onProjectChange={(id) => { setShowDashboard(false); setProjectId(id); }}
         onOpenExcelImport={() => setShowExcel(true)}
         onOpenAnalysis={() => setShowAnalysis(true)}
+        onOpenHelp={() => setShowHelp(true)}
         onSelectCase={(treeTab, id) => { setShowDashboard(false); setTab(treeTab); setFocusCase({ tree: treeTab, id, nonce: Date.now() }); }}
         onOpenDashboard={() => setShowDashboard(true)}
         data={data}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Header projectName={showDashboard ? '전체 대시보드' : projectName} />
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {showDashboard ? (
             <DashboardPage onSelectProject={(id) => { setProjectId(id); setShowDashboard(false); setTab('history'); }} />
           ) : !projectId ? (
@@ -73,6 +77,7 @@ function App() {
               {tab === 'case-history' && <CaseHistoryPage />}
               {tab === 'notifications' && <NotificationsPage />}
               {tab === 'presets' && <PresetsPage />}
+              {tab === 'encryption' && <EncryptionConfigsPage />}
               {tab === 'tst' && (
                 <ReportPage
                   mode="tst"
@@ -98,6 +103,7 @@ function App() {
         />
       )}
       {showAnalysis && projectId && <AnalysisModal projectId={projectId} onClose={() => setShowAnalysis(false)} />}
+      {showHelp && <HelpGuideModal onClose={() => setShowHelp(false)} />}
       <CommandPalette projects={projects} onSelectProject={setProjectId} onSelectTab={setTab} />
       <Toaster />
     </div>

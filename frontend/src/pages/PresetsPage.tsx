@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQAStore } from '../store/useQAStore';
 import {
@@ -21,6 +21,7 @@ const KIND_META: Record<PresetKind, { label: string; color: string; needsKey: bo
   url:    { label: '서버 URL', color: 'bg-[#7c3aed]/10 text-[#7c3aed] border-[#7c3aed]/30', needsKey: false },
   path:   { label: '엔드포인트 경로', color: 'bg-[#d97706]/10 text-[#d97706] border-[#d97706]/30', needsKey: false },
   body:   { label: '바디 필드', color: 'bg-[#e11d48]/10 text-[#e11d48] border-[#e11d48]/30', needsKey: true },
+  assertion_path: { label: '판정조건 경로', color: 'bg-[#0891b2]/10 text-[#0891b2] border-[#0891b2]/30', needsKey: false },
 };
 
 const ALL_CATS = '__all';
@@ -33,6 +34,12 @@ export default function PresetsPage() {
   const projectId = useQAStore((s) => s.projectId);
   const cats = useQAStore((s) => s.data.mgr.cats);
   const addCategory = useQAStore((s) => s.addCategory);
+  const updateCategory = useQAStore((s) => s.updateCategory);
+  const deleteCategory = useQAStore((s) => s.deleteCategory);
+  const [catManaging, setCatManaging] = useState(false);
+  const [catAddName, setCatAddName] = useState('');
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editingCatName, setEditingCatName] = useState('');
   const [presets, setPresets] = useState<ProjectPreset[]>([]);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -42,6 +49,23 @@ export default function PresetsPage() {
   const [filterCat, setFilterCat] = useState(ALL_CATS);
   const [newCatTarget, setNewCatTarget] = useState<'add' | 'edit' | null>(null);
   const [newCatName, setNewCatName] = useState('');
+  const [collapsedKinds, setCollapsedKinds] = useState<Set<PresetKind>>(() => {
+    try {
+      const saved = localStorage.getItem('presetsPage.collapsedKinds');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const toggleKind = (kind: PresetKind) => {
+    setCollapsedKinds((prev) => {
+      const next = new Set(prev);
+      if (next.has(kind)) next.delete(kind); else next.add(kind);
+      localStorage.setItem('presetsPage.collapsedKinds', JSON.stringify([...next]));
+      return next;
+    });
+  };
 
   const createCategory = (name: string): string | null => {
     if (!name.trim()) return null;
@@ -124,6 +148,13 @@ export default function PresetsPage() {
     return presets.filter((p) => p.category_id === filterCat);
   }, [presets, filterCat]);
 
+  const grouped = useMemo(() => {
+    const order = Object.keys(KIND_META) as PresetKind[];
+    return order
+      .map((kind) => ({ kind, items: filtered.filter((p) => p.kind === kind) }))
+      .filter((g) => g.items.length > 0);
+  }, [filtered]);
+
   const catFilterOptions = [
     { id: ALL_CATS, name: '전체' },
     { id: COMMON_CAT, name: '카테고리 공통 (미지정)' },
@@ -139,22 +170,98 @@ export default function PresetsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">저장된 값 관리</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            자주 쓰는 헤더 · URL · 파라미터를 등록해두고, 카테고리를 지정하면 케이스 추가 시 그 카테고리를
-            선택하는 것만으로 자동 적용됩니다. 값이 바뀌면 여기서 수정하세요.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => setAdding(true)} disabled={adding}>
-          <Plus className="mr-1 size-3.5" /> 추가
-        </Button>
+    <div className="mx-auto max-w-6xl p-6">
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold">저장된 값 관리</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          자주 쓰는 헤더 · URL · 파라미터를 등록해두고, 카테고리를 지정하면 케이스 추가 시 그 카테고리를
+          선택하는 것만으로 자동 적용됩니다. 값이 바뀌면 여기서 수정하세요.
+        </p>
       </div>
 
-      {/* 카테고리 필터 */}
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      {/* 카테고리 관리 */}
+      <div className="mb-4 rounded-xl border border-border/60">
+        <button
+          onClick={() => setCatManaging((v) => !v)}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold text-warning transition-colors hover:bg-secondary/40"
+        >
+          {catManaging ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          📁 카테고리 관리
+          <span className="ml-auto text-[11px] font-normal text-muted-foreground">{cats.length}개</span>
+        </button>
+        {catManaging && (
+          <div className="border-t border-border/60 p-3">
+            <div className="mb-2 flex flex-col gap-1.5">
+              {cats.map((c) => (
+                <div key={c.id} className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1.5">
+                  <div className="size-2 shrink-0 rounded-sm" style={{ background: c.color }} />
+                  {editingCatId === c.id ? (
+                    <>
+                      <Input
+                        autoFocus
+                        value={editingCatName}
+                        onChange={(e) => setEditingCatName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && editingCatName.trim()) {
+                            updateCategory(c.id, editingCatName.trim());
+                            setEditingCatId(null);
+                            toast.success('카테고리를 수정했습니다');
+                          }
+                          if (e.key === 'Escape') setEditingCatId(null);
+                        }}
+                        className="h-6 flex-1 text-xs"
+                      />
+                      <Button
+                        size="sm" variant="ghost" className="h-6 px-2"
+                        onClick={() => {
+                          if (!editingCatName.trim()) return;
+                          updateCategory(c.id, editingCatName.trim());
+                          setEditingCatId(null);
+                          toast.success('카테고리를 수정했습니다');
+                        }}
+                      >
+                        <Check className="size-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-muted-foreground" onClick={() => setEditingCatId(null)}>
+                        <X className="size-3.5" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-xs">{c.name}</span>
+                      <button onClick={() => { setEditingCatId(c.id); setEditingCatName(c.name); }} className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground">
+                        <Pencil className="size-3.5" />
+                      </button>
+                      <button
+                        onClick={() => { deleteCategory(c.id); toast.success('카테고리를 삭제했습니다'); }}
+                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+              {cats.length === 0 && (
+                <p className="rounded-md border border-dashed border-border px-2 py-2 text-center text-[11px] text-muted-foreground">등록된 카테고리가 없습니다</p>
+              )}
+            </div>
+            <div className="flex gap-1.5">
+              <Input
+                placeholder="새 카테고리 이름"
+                value={catAddName}
+                onChange={(e) => setCatAddName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && catAddName.trim()) { addCategory(catAddName.trim()); setCatAddName(''); toast.success('카테고리를 추가했습니다'); } }}
+                className="h-8 text-xs"
+              />
+              <Button size="sm" onClick={() => { if (catAddName.trim()) { addCategory(catAddName.trim()); setCatAddName(''); toast.success('카테고리를 추가했습니다'); } }}>추가</Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 카테고리 필터 + 추가 버튼 */}
+      <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {catFilterOptions.map((c) => (
           <button
             key={c.id}
@@ -167,10 +274,13 @@ export default function PresetsPage() {
             {c.name}
           </button>
         ))}
+        <Button size="sm" onClick={() => setAdding(true)} disabled={adding} className="ml-auto">
+          <Plus className="mr-1 size-3.5" /> 추가
+        </Button>
       </div>
 
       {adding && (
-        <div className="mb-4 rounded-xl border border-border bg-card p-4">
+        <div className="mb-6 max-w-xl rounded-xl border border-border bg-card p-4">
           <p className="mb-3 text-sm font-semibold">새 저장 값</p>
 
           <div className="mb-3 flex gap-2">
@@ -245,7 +355,7 @@ export default function PresetsPage() {
           <div className="mb-4">
             <label className="mb-1 block text-[11px] text-muted-foreground">값</label>
             <Input
-              placeholder={form.kind === 'url' ? 'https://api-stg.example.com' : form.kind === 'path' ? '/api/products/{id}' : '값 입력'}
+              placeholder={form.kind === 'url' ? 'https://api-stg.example.com' : form.kind === 'path' ? '/api/products/{id}' : form.kind === 'assertion_path' ? 'retcode 또는 data.status' : '값 입력'}
               value={form.value}
               onChange={(e) => setForm({ ...form, value: e.target.value })}
               className="h-8 font-mono text-xs"
@@ -268,12 +378,28 @@ export default function PresetsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {filtered.map((p) => {
-            const meta = KIND_META[p.kind];
-            const isEditing = editingId === p.id;
+          {grouped.map((group) => {
+            const isCollapsed = collapsedKinds.has(group.kind);
             return (
-              <div key={p.id} className="rounded-xl border border-border bg-card p-4">
-                {isEditing ? (
+            <div key={group.kind} className="rounded-xl border border-border/60">
+              <button
+                onClick={() => toggleKind(group.kind)}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-secondary/40"
+              >
+                {isCollapsed ? <ChevronRight className="size-4 text-muted-foreground" /> : <ChevronDown className="size-4 text-muted-foreground" />}
+                <Badge variant="outline" className={cn('text-[10px]', KIND_META[group.kind].color)}>
+                  {KIND_META[group.kind].label}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{group.items.length}개</span>
+              </button>
+              {!isCollapsed && (
+              <div className="grid grid-cols-1 gap-3 border-t border-border/60 p-3 sm:grid-cols-2 xl:grid-cols-3">
+                {group.items.map((p) => {
+                  const meta = KIND_META[p.kind];
+                  const isEditing = editingId === p.id;
+                  return (
+                    <div key={p.id} className="rounded-xl border border-border bg-card p-4">
+                      {isEditing ? (
                   <div>
                     <div className="mb-2">
                       <label className="mb-1 block text-[11px] text-muted-foreground">이름</label>
@@ -327,7 +453,6 @@ export default function PresetsPage() {
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className={cn('text-[10px] shrink-0', meta.color)}>{meta.label}</Badge>
                         {catName(p.category_id) ? (
                           <Badge variant="outline" className="text-[10px] shrink-0 border-muted-foreground/30 text-muted-foreground">{catName(p.category_id)}</Badge>
                         ) : (
@@ -349,7 +474,12 @@ export default function PresetsPage() {
                     </div>
                   </div>
                 )}
+                    </div>
+                  );
+                })}
               </div>
+              )}
+            </div>
             );
           })}
         </div>
