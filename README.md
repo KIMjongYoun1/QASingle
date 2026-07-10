@@ -208,6 +208,32 @@ npm run dev
 
 ---
 
+## 로컬 테스트 대상 서버 — ApiEndpointTest
+
+QA-Server 자체는 API를 만드는 도구가 아니라 **호출하는** 도구라서, 자동 실행 기능을 실제로
+검증하려면 호출할 대상 서버가 필요합니다. `/Users/ryankim/ApiEndpointTest`가 그 용도로 만든
+별도의 Spring Boot 목(mock) 서버입니다 (QA-Server와는 완전히 다른 저장소).
+
+```bash
+cd /Users/ryankim/ApiEndpointTest
+mvn spring-boot:run
+```
+
+- 포트 **8090** (`http://localhost:8090`), 요청/응답 로그는 `http://localhost:8090/admin/logs`
+- 회원/인증·상품·주문·결제·쿠폰·배송·리뷰·알림·검색·정산 10개 카테고리, 카테고리별로 실제
+  운영 API 같은 인증 헤더(`Authorization`/`X-Api-Key`/`X-Admin-Token`/`Idempotency-Key` 등)와
+  공통 필수 바디 필드 7개를 요구하도록 구현되어 있어, Negative 케이스(인증 실패, 필드 누락)까지
+  실제로 검증 가능
+- 자세한 엔드포인트 목록·필수 헤더 표는 해당 저장소의 `README.md` 참고
+
+QA-Server DB에는 이 서버를 대상으로 세팅된 **"ApiEndpointTest 연동"** 프로젝트가 있습니다 —
+케이스 30여 개, 변수 체이닝을 쓰는 7단계 결제 플로우, 카테고리별로 정리된 저장된 값(프리셋)
+세트가 이미 구성되어 있어 바로 열어서 자동 실행을 시험해볼 수 있습니다. 프론트엔드
+`.env`의 `VITE_API_URL`과는 별개로, 이 프로젝트의 **자동실행 Base URL을
+`http://localhost:8090`**으로 지정해서 사용합니다.
+
+---
+
 ## 환경 변수
 
 `frontend/.env`
